@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 300px;
+      padding: 16px;
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    .logo {
+      font-size: 20px;
+      font-weight: 600;
+      color: #06b6d4;
+      margin-bottom: 4px;
+    }
+    .subtitle {
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    .status {
+      padding: 8px;
+      background: #1e293b;
+      border-radius: 4px;
+      margin-bottom: 12px;
+      font-size: 12px;
+    }
+    .status.active {
+      border-left: 3px solid #10b981;
+    }
+    .status.inactive {
+      border-left: 3px solid #ef4444;
+    }
+    .button {
+      width: 100%;
+      padding: 10px;
+      background: #06b6d4;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+      margin-top: 8px;
+    }
+    .button:hover {
+      background: #0891b2;
+    }
+    .input {
+      width: 100%;
+      padding: 8px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 4px;
+      color: #e2e8f0;
+      margin-top: 8px;
+      font-size: 12px;
+    }
+    .label {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-top: 12px;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">🔍 LeadFlux</div>
+    <div class="subtitle">Email Finder</div>
+  </div>
+  
+  <div id="status" class="status inactive">
+    Not connected
+  </div>
+  
+  <label class="label">API URL (Backend):</label>
+  <input type="text" id="apiUrl" class="input" placeholder="http://localhost:8000" value="http://localhost:8000">
+  
+  <label class="label">Frontend URL (Optional):</label>
+  <input type="text" id="frontendUrl" class="input" placeholder="http://localhost:3000" value="">
+  <div style="font-size: 10px; color: #64748b; margin-top: 4px;">
+    Leave empty to auto-detect from API URL
+  </div>
+  
+  <label class="label" style="margin-top: 12px;">
+    <input type="checkbox" id="showInlineButton" style="margin-right: 6px;">
+    Show "Find email with LeadFlux" button on profile pages
+  </label>
+  
+  <button id="saveBtn" class="button">Save Settings</button>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
+

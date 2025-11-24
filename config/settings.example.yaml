@@ -1,0 +1,26 @@
+# Example configuration file
+# Copy to settings.yaml and customize
+
+api:
+  google_places:
+    enabled: true
+    api_key: ${GOOGLE_PLACES_API_KEY}
+  
+  bing_search:
+    enabled: true
+    api_key: ${BING_SEARCH_API_KEY}
+  
+  serpapi:
+    enabled: false
+    api_key: ${SERPAPI_KEY}
+
+database:
+  url: ${DATABASE_URL}
+  echo: false
+
+scraping:
+  default_max_pages: 5
+  default_timeout: 15
+  default_concurrency: 5
+  requests_per_minute: 60
+
