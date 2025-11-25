@@ -9,7 +9,7 @@
   ],
   "host_permissions": [
     "https://www.linkedin.com/*",
-    "http://localhost:8000/*"
+    "http://localhost:8002/*"
   ],
   "content_scripts": [
     {

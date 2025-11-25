@@ -51,15 +51,15 @@ try {
 }
 
 Write-Host ""
-Write-Host "Starting backend server on http://localhost:8000" -ForegroundColor Green
-Write-Host "API docs available at http://localhost:8000/docs" -ForegroundColor Green
+Write-Host "Starting backend server on http://localhost:8002" -ForegroundColor Green
+Write-Host "API docs available at http://localhost:8002/docs" -ForegroundColor Green
 Write-Host ""
 Write-Host "Press Ctrl+C to stop the server" -ForegroundColor Yellow
 Write-Host ""
 
 # Start the server
 try {
-    python -m uvicorn app.api.server:app --host 0.0.0.0 --port 8000 --reload
+    python -m uvicorn app.api.server:app --host 0.0.0.0 --port 8002 --reload
 } catch {
     Write-Host ""
     Write-Host "ERROR: Failed to start server" -ForegroundColor Red

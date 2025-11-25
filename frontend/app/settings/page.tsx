@@ -67,7 +67,7 @@ export default function SettingsPage() {
       // Use full URL if it's already a URL, otherwise prepend API URL
       const logoUrl = organization.logo_url.startsWith("http") 
         ? organization.logo_url 
-        : `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}${organization.logo_url}`;
+        : `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8002"}${organization.logo_url}`;
       setLogoPreview(logoUrl);
     } else {
       setLogoPreview(null);

@@ -25,7 +25,7 @@ pnpm install
 Create `.env.local`:
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8002
 NEXT_PUBLIC_API_KEY=your_api_key_here
 ```
 
@@ -229,7 +229,7 @@ const leads = await apiClient.getLeads(jobId, filters);
 
 ```env
 # Required
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8002
 
 # Optional
 NEXT_PUBLIC_API_KEY=your_api_key_here

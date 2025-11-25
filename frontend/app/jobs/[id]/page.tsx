@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { apiClient, type Job, type Lead } from "@/lib/api";
+import { apiClient, API_URL, type Job, type Lead } from "@/lib/api";
 import { LeadRow } from "@/components/leads/LeadRow";
 import { LeadDetailPanel } from "@/components/leads/LeadDetailPanel";
 import { AnimatePresence } from "framer-motion";
@@ -357,7 +357,7 @@ function InsightsTab({ jobId }: { jobId: number }) {
 
   const loadInsights = async () => {
     try {
-      const response = await fetch(`http://localhost:8000/api/jobs/${jobId}/insights`);
+      const response = await fetch(`${API_URL}/api/jobs/${jobId}/insights`);
       if (response.ok) {
         const data = await response.json();
         setInsights(data);
@@ -377,7 +377,7 @@ function InsightsTab({ jobId }: { jobId: number }) {
 
   const handleAISend = async (query: string): Promise<string> => {
     try {
-      const response = await fetch(`http://localhost:8000/api/jobs/${jobId}/ask`, {
+      const response = await fetch(`${API_URL}/api/jobs/${jobId}/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: query }),

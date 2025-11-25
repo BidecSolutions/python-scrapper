@@ -62,7 +62,7 @@ if (-not (Test-Path ".env.local")) {
     Write-Host "Creating .env.local with default API URL..." -ForegroundColor Yellow
     
     $envContent = @"
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8002
 "@
     Set-Content -Path ".env.local" -Value $envContent
     Write-Host ".env.local created with default settings" -ForegroundColor Green

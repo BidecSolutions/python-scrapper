@@ -81,7 +81,7 @@
 ### API Usage
 ```bash
 # Find email
-curl -X POST "http://localhost:8000/api/email-finder" \
+curl -X POST "http://localhost:8002/api/email-finder" \
   -H "Content-Type: application/json" \
   -d '{
     "first_name": "John",
@@ -90,12 +90,12 @@ curl -X POST "http://localhost:8000/api/email-finder" \
   }'
 
 # Verify email
-curl -X POST "http://localhost:8000/api/email-verifier" \
+curl -X POST "http://localhost:8002/api/email-verifier" \
   -H "Content-Type: application/json" \
   -d '{"email": "john.doe@example.com"}'
 
 # Save to leads
-curl -X POST "http://localhost:8000/api/email-finder/save-to-leads" \
+curl -X POST "http://localhost:8002/api/email-finder/save-to-leads" \
   -H "Content-Type: application/json" \
   -d '{
     "first_name": "John",

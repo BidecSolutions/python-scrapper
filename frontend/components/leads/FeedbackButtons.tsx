@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { ThumbsUp, ThumbsDown, Star } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
+import { API_URL } from "@/lib/api";
 
 interface FeedbackButtonsProps {
   leadId: number;
@@ -28,7 +29,7 @@ export function FeedbackButtons({
     
     setSubmitting(true);
     try {
-      const response = await fetch("http://localhost:8000/api/feedback", {
+      const response = await fetch(`${API_URL}/api/feedback`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lead_id: leadId, label }),

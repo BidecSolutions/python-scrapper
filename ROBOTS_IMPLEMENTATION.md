@@ -120,7 +120,7 @@ This creates:
 ### Generate Robot from Prompt
 
 ```bash
-curl -X POST http://localhost:8000/api/robots/ai \
+curl -X POST http://localhost:8002/api/robots/ai \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Extract restaurant name, website, email, phone, rating from Yelp listing pages",
@@ -131,7 +131,7 @@ curl -X POST http://localhost:8000/api/robots/ai \
 ### Test Robot
 
 ```bash
-curl -X POST http://localhost:8000/api/robots/1/test \
+curl -X POST http://localhost:8002/api/robots/1/test \
   -H "Content-Type: application/json" \
   -d '{
     "url": "https://www.yelp.com/search?find_desc=Restaurants&find_loc=Karachi"
@@ -141,7 +141,7 @@ curl -X POST http://localhost:8000/api/robots/1/test \
 ### Run Robot on URLs
 
 ```bash
-curl -X POST http://localhost:8000/api/robots/1/runs \
+curl -X POST http://localhost:8002/api/robots/1/runs \
   -H "Content-Type: application/json" \
   -d '{
     "urls": [
@@ -154,7 +154,7 @@ curl -X POST http://localhost:8000/api/robots/1/runs \
 ### Import as Leads
 
 ```bash
-curl -X POST http://localhost:8000/api/robot-runs/1/import-leads \
+curl -X POST http://localhost:8002/api/robot-runs/1/import-leads \
   -H "Content-Type: application/json" \
   -d '{
     "field_mapping": {

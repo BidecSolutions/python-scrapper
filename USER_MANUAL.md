@@ -786,8 +786,8 @@ Configure your account and preferences:
 ### API Endpoints
 
 For developers, the API documentation is available at:
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
+- Swagger UI: `http://localhost:8002/docs`
+- ReDoc: `http://localhost:8002/redoc`
 
 ### Support
 

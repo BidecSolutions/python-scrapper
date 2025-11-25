@@ -148,7 +148,7 @@ Only extract packages that are explicitly mentioned or clearly implied."""
                 
                 text = soup.get_text(separator=" ", strip=True)
                 text = " ".join(text.split())
-                return text[:8000]  # Limit length
+                return text[:8002]  # Limit length
         
         except Exception as e:
             logger.warning(f"Failed to fetch website text: {e}")

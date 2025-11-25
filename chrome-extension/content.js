@@ -15,7 +15,7 @@
   async function getApiUrl() {
     return new Promise((resolve) => {
       chrome.storage.sync.get(['apiUrl'], (result) => {
-        resolve(result.apiUrl || 'http://localhost:8000');
+        resolve(result.apiUrl || 'http://localhost:8002');
       });
     });
   }
@@ -695,10 +695,10 @@
         
         // If no frontend URL stored, try to derive from API URL
         if (!frontendUrl) {
-          const apiUrl = storage.apiUrl || 'http://localhost:8000';
-          // Replace port 8000 with 3000 or 3001 (common Next.js ports)
-          if (apiUrl.includes(':8000')) {
-            frontendUrl = apiUrl.replace(':8000', ':3000');
+          const apiUrl = storage.apiUrl || 'http://localhost:8002';
+          // Replace port 8002 with 3000 or 3001 (common Next.js ports)
+          if (apiUrl.includes(':8002')) {
+            frontendUrl = apiUrl.replace(':8002', ':3000');
           } else if (apiUrl.includes('localhost')) {
             frontendUrl = apiUrl.replace(/:\d+/, ':3000');
           } else {

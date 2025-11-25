@@ -34,7 +34,7 @@ Your Lead Scraper has been transformed into a **complete, production-ready SaaS 
          │
 ┌────────▼────────┐
 │   Backend       │  FastAPI + Postgres
-│  (localhost:8000)│
+│  (localhost:8002)│
 └────────┬────────┘
          │
     ┌────┴────┬──────────────┐
@@ -87,7 +87,7 @@ pip install -r requirements.txt
 # alembic upgrade head
 
 # Start API server
-uvicorn app.api.server:app --reload --port 8000
+uvicorn app.api.server:app --reload --port 8002
 ```
 
 ### 2. Frontend Setup
@@ -99,7 +99,7 @@ cd frontend
 npm install
 
 # Configure environment
-# Create .env.local with NEXT_PUBLIC_API_URL=http://localhost:8000
+# Create .env.local with NEXT_PUBLIC_API_URL=http://localhost:8002
 
 # Start dev server
 npm run dev
@@ -108,8 +108,8 @@ npm run dev
 ### 3. Access Your SaaS
 
 - **Frontend**: http://localhost:3000
-- **API Docs**: http://localhost:8000/docs
-- **API Health**: http://localhost:8000/health
+- **API Docs**: http://localhost:8002/docs
+- **API Health**: http://localhost:8002/health
 
 ## 🎨 Frontend Features
 

@@ -28,7 +28,7 @@ npm run dev
 ```
 
 **What it does:**
-- Starts FastAPI backend on http://localhost:8000
+- Starts FastAPI backend on http://localhost:8002
 - Starts Next.js frontend on http://localhost:3000
 - Both servers auto-reload on file changes
 
@@ -42,8 +42,8 @@ npm run dev:backend
 ```
 
 **Access:**
-- API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
+- API: http://localhost:8002
+- API Docs: http://localhost:8002/docs
 
 ---
 
@@ -183,7 +183,7 @@ python --version
 Change ports in the scripts or stop the process using the port:
 ```bash
 # Windows
-netstat -ano | findstr :8000
+netstat -ano | findstr :8002
 taskkill /PID <PID> /F
 ```
 
@@ -234,7 +234,7 @@ GROQ_API_KEY=your_key
 ### Frontend (.env.local)
 Create `frontend/.env.local`:
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8002
 ```
 
 ---
@@ -244,7 +244,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 - **Development mode** (`npm run dev`): Hot-reload enabled, runs both servers
 - **Production mode** (`npm run start`): No hot-reload, optimized builds
 - Use `Ctrl+C` to stop servers
-- Backend runs on **port 8000**
+- Backend runs on **port 8002**
 - Frontend runs on **port 3000**
 - `concurrently` runs both commands in parallel and shows output from both
 

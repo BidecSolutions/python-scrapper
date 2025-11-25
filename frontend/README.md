@@ -38,7 +38,7 @@ pnpm install
 Create `.env.local`:
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8002
 NEXT_PUBLIC_API_KEY=your_api_key_here
 ```
 
@@ -98,7 +98,7 @@ Slide-in panel showing:
 
 ## 🔌 API Integration
 
-The frontend connects to the FastAPI backend via `lib/api.ts`. Make sure your backend is running on `http://localhost:8000` (or update `.env.local`).
+The frontend connects to the FastAPI backend via `lib/api.ts`. Make sure your backend is running on `http://localhost:8002` (or update `.env.local`).
 
 ### API Endpoints Used
 

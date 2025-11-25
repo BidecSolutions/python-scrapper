@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { Sparkles } from "lucide-react";
 import { useState } from "react";
+import { API_URL } from "@/lib/api";
 
 interface SmartScoreBadgeProps {
   score: number | null;
@@ -51,7 +52,7 @@ export function SmartScoreBadge({
         // Fetch explanation
         const leadId = (window as any).currentLeadId; // Would need to pass this
         if (leadId) {
-          const response = await fetch(`http://localhost:8000/api/leads/${leadId}/explanation`);
+          const response = await fetch(`${API_URL}/api/leads/${leadId}/explanation`);
           if (response.ok) {
             const data = await response.json();
             setExplanation(data.explanation);

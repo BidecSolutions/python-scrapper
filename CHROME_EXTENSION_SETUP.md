@@ -13,7 +13,7 @@
 
 3. **Configure API URL**
    - Click the extension icon
-   - Enter your LeadFlux API URL (default: `http://localhost:8000`)
+   - Enter your LeadFlux API URL (default: `http://localhost:8002`)
    - Click "Save Settings"
 
 4. **Use on LinkedIn**

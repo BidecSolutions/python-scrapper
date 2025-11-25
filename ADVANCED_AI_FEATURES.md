@@ -134,25 +134,25 @@ This:
 ### Generate Dossier
 
 ```bash
-curl -X POST http://localhost:8000/api/v2/leads/1/dossier
+curl -X POST http://localhost:8002/api/v2/leads/1/dossier
 ```
 
 ### Get Key People
 
 ```bash
-curl http://localhost:8000/api/v2/leads/1/key-people?limit=5
+curl http://localhost:8002/api/v2/leads/1/key-people?limit=5
 ```
 
 ### Get Next Action
 
 ```bash
-curl http://localhost:8000/api/v2/leads/1/next-action
+curl http://localhost:8002/api/v2/leads/1/next-action
 ```
 
 ### Record Action Outcome
 
 ```bash
-curl -X POST http://localhost:8000/api/v2/leads/1/actions \
+curl -X POST http://localhost:8002/api/v2/leads/1/actions \
   -H "Content-Type: application/json" \
   -d '{"action": "email_template_b", "outcome": "replied", "suggested_by_ai": true}'
 ```

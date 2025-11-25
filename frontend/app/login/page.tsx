@@ -32,10 +32,11 @@ export default function LoginPage() {
     try {
       const response = await apiClient.login(email, password);
       
-      // Store token
+      // Store token and set it in API client immediately
       localStorage.setItem("auth_token", response.access_token);
+      apiClient.setToken(response.access_token);
       
-      // Get user info
+      // Get user info (now the token is set in the API client)
       const userInfo = await apiClient.getMe();
       
       // Update auth context

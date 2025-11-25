@@ -315,7 +315,7 @@ function BulkVerifyPlaceholder({
             onClick={async () => {
               try {
                 const response = await fetch(
-                  `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/email-verifier/export/csv`
+                  `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8002"}/api/email-verifier/export/csv`
                 );
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
@@ -595,7 +595,7 @@ export default function EmailFinderPage() {
   const handleDownloadExtension = async () => {
     try {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/extension/download`
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8002"}/api/extension/download`
       );
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);

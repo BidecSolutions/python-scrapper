@@ -114,7 +114,7 @@ Return ONLY the JSON object."""
     def _build_prompt(self, website_text: str) -> str:
         """Build the user prompt with website content"""
         # Truncate if too long (most LLMs have token limits)
-        max_chars = 8000  # Adjust based on your LLM's context window
+        max_chars = 8002  # Adjust based on your LLM's context window
         if len(website_text) > max_chars:
             website_text = website_text[:max_chars] + "\n[... content truncated ...]"
         

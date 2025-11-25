@@ -7,7 +7,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
 # Stop processes on common ports
-$ports = @(8000, 3000, 3001)
+$ports = @(8002, 3000, 3001)
 
 foreach ($port in $ports) {
     Write-Host "Checking for processes on port $port..." -ForegroundColor Yellow

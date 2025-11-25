@@ -24,7 +24,7 @@ Chrome extension for finding and verifying email addresses from LinkedIn profile
 ## Configuration
 
 1. Click the extension icon in the toolbar
-2. Enter your LeadFlux API URL (default: `http://localhost:8000`)
+2. Enter your LeadFlux API URL (default: `http://localhost:8002`)
 3. Click "Save Settings"
 
 ## Features

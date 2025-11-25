@@ -5,7 +5,7 @@ Quick reference for running the LeadFlux application on Windows.
 ## Available Scripts
 
 ### 1. `start-backend.ps1`
-Starts the FastAPI backend server on port 8000.
+Starts the FastAPI backend server on port 8002.
 
 **Usage:**
 ```powershell
@@ -19,8 +19,8 @@ Starts the FastAPI backend server on port 8000.
 - Starts server with auto-reload enabled
 
 **Access:**
-- API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
+- API: http://localhost:8002
+- API Docs: http://localhost:8002/docs
 
 ---
 
@@ -69,7 +69,7 @@ Stops all running servers and cleans up processes.
 ```
 
 **Features:**
-- Stops processes on ports 8000, 3000, 3001
+- Stops processes on ports 8002, 3000, 3001
 - Kills Node.js processes
 - Kills Python server processes
 
@@ -95,7 +95,7 @@ Stops all running servers and cleans up processes.
 ```powershell
 # Backend
 cd .
-python -m uvicorn app.api.server:app --host 0.0.0.0 --port 8000 --reload
+python -m uvicorn app.api.server:app --host 0.0.0.0 --port 8002 --reload
 
 # Frontend (in another terminal)
 cd frontend
@@ -119,7 +119,7 @@ If a port is already in use:
 .\stop-all.ps1
 
 # Or manually kill processes on specific ports
-netstat -ano | findstr :8000
+netstat -ano | findstr :8002
 taskkill /PID <PID> /F
 ```
 
@@ -162,7 +162,7 @@ OPENCAGE_API_KEY=your_key_here
 ### Frontend (.env.local)
 The `start-frontend.ps1` script automatically creates `.env.local` with:
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8002
 ```
 
 ---
@@ -195,7 +195,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 ## Notes
 
-- Backend runs on **port 8000**
+- Backend runs on **port 8002**
 - Frontend runs on **port 3000**
 - Both servers support hot-reload (auto-restart on file changes)
 - Use `Ctrl+C` in the terminal to stop individual servers

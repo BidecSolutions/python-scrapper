@@ -19,7 +19,7 @@ if (-not (Test-Path "start-frontend.ps1")) {
 
 Write-Host "This script will start both servers in separate windows." -ForegroundColor Yellow
 Write-Host ""
-Write-Host "Backend will run on: http://localhost:8000" -ForegroundColor Green
+Write-Host "Backend will run on: http://localhost:8002" -ForegroundColor Green
 Write-Host "Frontend will run on: http://localhost:3000" -ForegroundColor Green
 Write-Host ""
 Write-Host "Press any key to continue or Ctrl+C to cancel..." -ForegroundColor Yellow
@@ -41,8 +41,8 @@ Write-Host "========================================" -ForegroundColor Green
 Write-Host "Both servers are starting!" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "Backend API: http://localhost:8000" -ForegroundColor Cyan
-Write-Host "Backend Docs: http://localhost:8000/docs" -ForegroundColor Cyan
+Write-Host "Backend API: http://localhost:8002" -ForegroundColor Cyan
+Write-Host "Backend Docs: http://localhost:8002/docs" -ForegroundColor Cyan
 Write-Host "Frontend: http://localhost:3000" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Two new PowerShell windows have been opened:" -ForegroundColor Yellow

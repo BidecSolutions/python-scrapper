@@ -33,7 +33,7 @@ npm run dev:backend
 ```bash
 # Stop current server (Ctrl+C)
 # Then:
-python -m uvicorn app.api.server:app --host 0.0.0.0 --port 8000 --reload
+python -m uvicorn app.api.server:app --host 0.0.0.0 --port 8002 --reload
 ```
 
 ### Step 3: Test Logo Upload

@@ -11,9 +11,9 @@ if (Test-Path "venv\Scripts\Activate.ps1") {
 }
 
 # Start uvicorn server
-Write-Host "Starting uvicorn server on http://localhost:8000" -ForegroundColor Green
+Write-Host "Starting uvicorn server on http://localhost:8002" -ForegroundColor Green
 Write-Host "Press Ctrl+C to stop the server" -ForegroundColor Yellow
 Write-Host ""
 
-uvicorn app.api.server:app --reload --port 8000
+uvicorn app.api.server:app --reload --port 8002
 

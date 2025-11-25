@@ -164,7 +164,7 @@ npm install
 Create `frontend/.env.local`:
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8002
 NEXT_PUBLIC_API_KEY=your_api_key_here
 ```
 
@@ -180,7 +180,7 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ```bash
 cd ..
-uvicorn app.api.server:app --reload --port 8000
+uvicorn app.api.server:app --reload --port 8002
 ```
 
 ## 📁 File Structure

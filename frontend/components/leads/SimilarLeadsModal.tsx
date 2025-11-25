@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, ExternalLink, Search } from "lucide-react";
-import { apiClient } from "@/lib/api";
+import { apiClient, API_URL } from "@/lib/api";
 import { SmartScoreBadge } from "./SmartScoreBadge";
 
 interface SimilarLeadsModalProps {
@@ -33,7 +33,7 @@ export function SimilarLeadsModal({
     setLoading(true);
     try {
       const response = await fetch(
-        `http://localhost:8000/api/leads/${leadId}/similar?scope=${scope}&limit=20`
+        `${API_URL}/api/leads/${leadId}/similar?scope=${scope}&limit=20`
       );
       if (response.ok) {
         const data = await response.json();

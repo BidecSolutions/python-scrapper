@@ -79,7 +79,8 @@ export default function AdminUsersPage() {
           errorMessage = detail || `Error ${status}: Failed to load users`;
         }
       } else if (err?.request) {
-        errorMessage = `Network error. Please check if the backend server is running on http://localhost:8000`;
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8002";
+        errorMessage = `Network error. Please check if the backend server is running on ${apiUrl}`;
       } else {
         errorMessage = err?.message || "Failed to load users";
       }

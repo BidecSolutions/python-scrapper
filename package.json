@@ -5,10 +5,10 @@
   "private": true,
   "scripts": {
     "dev": "concurrently -n \"backend,frontend\" -c \"cyan,magenta\" \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:backend": "python -m uvicorn app.api.server:app --host 0.0.0.0 --port 8000 --reload",
+    "dev:backend": "python -m uvicorn app.api.server:app --host 0.0.0.0 --port 8002 --reload",
     "dev:frontend": "cd frontend && npm run dev",
     "start": "concurrently -n \"backend,frontend\" -c \"cyan,magenta\" \"npm run start:backend\" \"npm run start:frontend\"",
-    "start:backend": "python -m uvicorn app.api.server:app --host 0.0.0.0 --port 8000",
+    "start:backend": "python -m uvicorn app.api.server:app --host 0.0.0.0 --port 8002",
     "start:frontend": "cd frontend && npm run start",
     "build": "npm run build:frontend",
     "build:frontend": "cd frontend && npm run build",

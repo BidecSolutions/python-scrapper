@@ -94,16 +94,16 @@ python -m app.main \
 
 1. **Start the API server:**
 ```bash
-uvicorn app.api.server:app --reload --port 8000
+uvicorn app.api.server:app --reload --port 8002
 ```
 
 2. **Open the interactive docs:**
-   - Navigate to http://localhost:8000/docs
+   - Navigate to http://localhost:8002/docs
    - Try the `/api/scrape-async` endpoint
 
 3. **Or use curl:**
 ```bash
-curl -X POST "http://localhost:8000/api/scrape-async" \
+curl -X POST "http://localhost:8002/api/scrape-async" \
   -H "Content-Type: application/json" \
   -d '{
     "niche": "dentist clinic",
@@ -148,7 +148,7 @@ alembic upgrade head
 4. **Use the job-based endpoint:**
 ```bash
 # The /api/jobs/run-once endpoint saves results to the database
-curl -X POST "http://localhost:8000/api/jobs/run-once" \
+curl -X POST "http://localhost:8002/api/jobs/run-once" \
   -H "Content-Type: application/json" \
   -d '{
     "niche": "dentist clinic",
@@ -193,7 +193,7 @@ The CSV/JSON output will contain:
 ## Next Steps
 
 - Read the full [README.md](README.md) for advanced features
-- Explore the API docs at http://localhost:8000/docs
+- Explore the API docs at http://localhost:8002/docs
 - Customize sources in `app/sources/`
 - Add new export formats in `app/services/export_service.py`
 

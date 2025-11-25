@@ -77,7 +77,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             <img
               src={organization.logo_url.startsWith('http') 
                 ? organization.logo_url 
-                : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}${organization.logo_url}`}
+                : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002'}${organization.logo_url}`}
               alt={organization.name}
               className="h-9 w-9 rounded-[12px] object-cover border border-slate-300 dark:border-slate-700"
             />
