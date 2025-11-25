@@ -19,7 +19,7 @@ guessImports = true
 enabledForHosting = false
 
 [gitHubImport]
-requiredFiles = [".replit", "replit.nix", ".config"]
+requiredFiles = [".replit", "replit.nix"]
 
 [languages.python3]
 pattern = "**/*.py"
