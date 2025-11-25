@@ -1,0 +1,32 @@
+language = "python3"
+entrypoint = "main.py"
+
+[deploy]
+publicDir = "/"
+run = ["sh", "-c", "uvicorn app.api.server:app --host 0.0.0.0 --port $PORT"]
+
+[env]
+PYTHONPATH = "."
+PORT = "8000"
+
+[packager]
+language = "python3"
+ignoredPackages = ["unit_tests"]
+
+[packager.features]
+packageSearch = true
+guessImports = true
+enabledForHosting = false
+
+[gitHubImport]
+requiredFiles = [".replit", "replit.nix", ".config"]
+
+[languages.python3]
+pattern = "**/*.py"
+
+[languages.python3.languageServer]
+start = "pylsp"
+
+[unitTest]
+language = "python3"
+
