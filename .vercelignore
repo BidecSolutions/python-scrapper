@@ -1,0 +1,35 @@
+# Backend files - don't deploy to Vercel
+app/
+migrations/
+*.py
+requirements.txt
+pyproject.toml
+venv/
+.venv/
+__pycache__/
+*.db
+*.sqlite
+lead_scraper.db
+
+# Backend documentation
+*.md
+!frontend/README.md
+
+# Other directories
+doctor_bot/
+chrome-extension/
+uploads/
+config/
+tests/
+alembic/
+
+# Python files
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Root package.json (we only need frontend)
+package.json
+package-lock.json
+
