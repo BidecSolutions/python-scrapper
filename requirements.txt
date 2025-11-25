@@ -40,6 +40,7 @@ python-jose[cryptography]>=3.3.0  # For JWT tokens (optional)
 cryptography>=41.0.0  # For secure token generation
 
 # AI/ML (optional - install as needed)
+numpy>=1.24.0  # Required for scikit-learn, pandas, and ML scoring service
 groq>=0.4.0  # For Groq LLM (recommended - fast & free tier available)
 scikit-learn>=1.3.0  # For ML models (smart scoring, clustering)
 pandas>=2.0.0  # For data processing (doctor_bot pipeline)
