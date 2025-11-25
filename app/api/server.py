@@ -4,6 +4,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import logging
 
+# Configure logging early so it's available for error handling
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Import all ORM models to ensure they're registered with SQLAlchemy Base
 # This must happen before any routes are imported that might use these models
 from app.core import orm  # Main ORM models
@@ -85,9 +89,8 @@ from app.api.routes_saved_views import router as saved_views_router
 from app.api.routes_duplicates import router as duplicates_router
 from app.api.routes_health_score import router as health_score_router
 
-# Configure logging
+# Configure logging (logger already defined at top)
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
 def create_app() -> FastAPI:
