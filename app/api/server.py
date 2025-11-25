@@ -33,7 +33,14 @@ from app.core import orm_robots  # Robot models
 from app.api.routes import router as api_router
 from app.api.routes_jobs import router as jobs_router
 from app.api.routes_leads import router as leads_router
-from app.api.routes_ml import router as ml_router
+# ML routes are optional - may fail if numpy/scikit-learn not installed
+try:
+    from app.api.routes_ml import router as ml_router
+    ML_ROUTES_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"ML routes not available: {e}")
+    ml_router = None
+    ML_ROUTES_AVAILABLE = False
 from app.api.routes_settings import router as settings_router
 from app.api.routes_dashboard import router as dashboard_router
 from app.api.routes_v2 import router as v2_router
@@ -118,7 +125,11 @@ def create_app() -> FastAPI:
     # Register playbooks_router BEFORE ml_router to avoid route conflict
     # (ml_router has /playbooks/{playbook_id} which would match /playbooks/jobs)
     app.include_router(playbooks_router, prefix="/api", tags=["playbooks"])
-    app.include_router(ml_router, prefix="/api", tags=["ml"])
+    # ML routes are optional - only include if available (numpy/scikit-learn installed)
+    if ML_ROUTES_AVAILABLE and ml_router:
+        app.include_router(ml_router, prefix="/api", tags=["ml"])
+    else:
+        logger.warning("ML routes not registered - numpy/scikit-learn may not be installed")
     app.include_router(settings_router, prefix="/api", tags=["settings"])
     app.include_router(dashboard_router, prefix="/api", tags=["dashboard"])
     app.include_router(v2_router, prefix="/api/v2", tags=["v2-ai"])
