@@ -1,4 +1,7 @@
-# Backend files - don't deploy to Vercel
+# CRITICAL: Exclude ALL backend/Python files from Vercel deployment
+# Vercel should ONLY deploy the frontend directory
+
+# Python backend - EXCLUDE EVERYTHING
 app/
 migrations/
 *.py
@@ -10,12 +13,12 @@ __pycache__/
 *.db
 *.sqlite
 lead_scraper.db
+*.pyc
+*.pyo
+*.pyd
+.Python
 
-# Backend documentation
-*.md
-!frontend/README.md
-
-# Other directories
+# Backend directories
 doctor_bot/
 chrome-extension/
 uploads/
@@ -23,13 +26,14 @@ config/
 tests/
 alembic/
 
-# Python files
-*.pyc
-*.pyo
-*.pyd
-.Python
-
-# Root package.json (we only need frontend)
+# Root package.json (monorepo root - not needed)
 package.json
 package-lock.json
+
+# Backend documentation
+*.md
+!frontend/README.md
+
+# Only deploy frontend directory
+# Everything else should be ignored
 
