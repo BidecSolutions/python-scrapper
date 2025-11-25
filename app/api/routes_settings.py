@@ -89,8 +89,18 @@ def update_organization(
 
 
 # Create uploads directory if it doesn't exist
+# Note: On serverless platforms (Vercel, AWS Lambda), filesystem may be read-only
+# In production, use cloud storage (S3, Vercel Blob, etc.) instead of local filesystem
 UPLOADS_DIR = Path("uploads/logos")
-UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+except (OSError, PermissionError) as e:
+    # Serverless platforms have read-only filesystem - this is expected
+    # File uploads won't work on serverless, should use cloud storage instead
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Could not create uploads directory (read-only filesystem on serverless): {e}")
+    UPLOADS_DIR = None  # Disable file uploads on serverless
 
 
 @router.post("/settings/organization/logo")
@@ -99,6 +109,13 @@ async def upload_logo(
     db: Session = Depends(get_db),
 ):
     """Upload organization logo"""
+    # Check if file uploads are supported (not on serverless platforms)
+    if UPLOADS_DIR is None:
+        raise HTTPException(
+            status_code=503,
+            detail="File uploads not supported on serverless platforms. Please use cloud storage (S3, Vercel Blob, etc.)"
+        )
+    
     org = get_or_create_default_org(db)
     
     # Validate file type
@@ -114,14 +131,22 @@ async def upload_logo(
     # Generate unique filename
     file_ext = Path(file.filename).suffix or ".png"
     filename = f"org_{org.id}_{int(datetime.utcnow().timestamp())}{file_ext}"
+    
+    # UPLOADS_DIR is already checked above, so it's safe to use here
     file_path = UPLOADS_DIR / filename
     
     # Save file
-    with open(file_path, "wb") as f:
-        f.write(file_content)
+    try:
+        with open(file_path, "wb") as f:
+            f.write(file_content)
+    except (OSError, PermissionError) as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Could not save file (read-only filesystem on serverless): {str(e)}"
+        )
     
     # Delete old logo if exists
-    if org.logo_url:
+    if org.logo_url and UPLOADS_DIR:
         old_path = Path(org.logo_url.lstrip("/"))
         if old_path.exists() and old_path.parent == UPLOADS_DIR:
             try:
