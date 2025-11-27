@@ -130,7 +130,6 @@ def get_or_create_lead_from_linkedin(
         organization_id=organization_id,
         workspace_id=workspace_id,  # Set workspace_id if provided
         owner_user_id=owner_user_id,  # Set owner for rep performance tracking
-        created_by_user_id=owner_user_id,  # Also set created_by for fallback attribution
         name=full_name,
         contact_person_name=full_name,
         contact_person_role=title or headline,
