@@ -88,6 +88,7 @@ from app.api.routes_lookalike import router as lookalike_router
 from app.api.routes_saved_views import router as saved_views_router
 from app.api.routes_duplicates import router as duplicates_router
 from app.api.routes_health_score import router as health_score_router
+from app.api.routes_google_maps import router as google_maps_router
 
 # Configure logging (logger already defined at top)
 logging.basicConfig(level=logging.INFO)
@@ -175,6 +176,7 @@ def create_app() -> FastAPI:
     app.include_router(saved_views_router, prefix="/api", tags=["saved-views"])
     app.include_router(duplicates_router, prefix="/api", tags=["duplicates"])
     app.include_router(health_score_router, prefix="/api", tags=["health-score"])
+    app.include_router(google_maps_router, prefix="/api", tags=["google-maps"])
 
     # Serve static files (uploads)
     import os
