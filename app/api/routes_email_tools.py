@@ -498,6 +498,7 @@ def list_verification_jobs(
 
 
 @router.get("/email/verification-jobs/{job_id}")
+@router.get("/verification/jobs/{job_id}")  # Alias for frontend compatibility
 def get_verification_job(
     job_id: int,
     db: Session = Depends(get_db),
@@ -531,6 +532,57 @@ def get_verification_job(
         "created_at": job.created_at.isoformat(),
         "started_at": job.started_at.isoformat() if job.started_at else None,
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+    }
+
+
+@router.get("/email/verification-jobs/{job_id}/results")
+@router.get("/verification/jobs/{job_id}/results")  # Alias for frontend compatibility
+def get_verification_job_results(
+    job_id: int,
+    db: Session = Depends(get_db),
+    limit: int = 100,
+    offset: int = 0,
+    status: Optional[str] = None,
+):
+    """Get verification job results (individual email items)"""
+    org = get_or_create_default_org(db)
+    
+    # Verify job exists and belongs to org
+    job = db.query(EmailVerificationJobORM).filter(
+        EmailVerificationJobORM.id == job_id,
+        EmailVerificationJobORM.organization_id == org.id
+    ).first()
+    
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Get verification items
+    query = db.query(EmailVerificationItemORM).filter(
+        EmailVerificationItemORM.job_id == job_id,
+        EmailVerificationItemORM.organization_id == org.id
+    )
+    
+    # Filter by status if provided
+    if status:
+        query = query.filter(EmailVerificationItemORM.verify_status == status)
+    
+    total = query.count()
+    items = query.order_by(EmailVerificationItemORM.created_at.desc()).limit(limit).offset(offset).all()
+    
+    return {
+        "total": total,
+        "items": [
+            {
+                "id": item.id,
+                "email": item.raw_email,
+                "status": item.verify_status,
+                "reason": item.verify_reason,
+                "confidence": float(item.verify_confidence) if item.verify_confidence else None,
+                "error": item.error,
+                "created_at": item.created_at.isoformat() if item.created_at else None,
+            }
+            for item in items
+        ],
     }
 
 
