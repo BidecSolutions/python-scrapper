@@ -94,7 +94,20 @@ def verify_single_email(
         )
     
     # Verify email
-    status, reason, confidence = verify_email(req.email.lower())
+    status, reason = verify_email(req.email.lower())
+    
+    # Calculate confidence based on status
+    confidence = None
+    if status == VerificationStatus.VALID:
+        confidence = 0.95
+    elif status == VerificationStatus.RISKY:
+        confidence = 0.7
+    elif status == VerificationStatus.UNKNOWN:
+        confidence = 0.4
+    elif status in (VerificationStatus.DISPOSABLE, VerificationStatus.GIBBERISH):
+        confidence = 0.1
+    else:
+        confidence = 0.0
     
     email_obj = None
     
@@ -451,15 +464,13 @@ def find_email_for_lead(
 # Job Management Endpoints
 # ============================================================================
 
-@router.get("/email/verification-jobs")
-@router.get("/verification/jobs")  # Alias for frontend compatibility
-def list_verification_jobs(
-    db: Session = Depends(get_db),
+def _list_verification_jobs_impl(
+    db: Session,
     limit: int = 50,
     offset: int = 0,
     status: Optional[str] = None,
 ):
-    """List all verification jobs for organization"""
+    """Internal implementation for listing verification jobs"""
     org = get_or_create_default_org(db)
     
     query = db.query(EmailVerificationJobORM).filter(
@@ -497,13 +508,33 @@ def list_verification_jobs(
     ]
 
 
-@router.get("/email/verification-jobs/{job_id}")
-@router.get("/verification/jobs/{job_id}")  # Alias for frontend compatibility
-def get_verification_job(
-    job_id: int,
+@router.get("/email/verification-jobs")
+def list_verification_jobs(
     db: Session = Depends(get_db),
+    limit: int = 50,
+    offset: int = 0,
+    status: Optional[str] = None,
 ):
-    """Get verification job details"""
+    """List all verification jobs for organization"""
+    return _list_verification_jobs_impl(db, limit, offset, status)
+
+
+@router.get("/verification/jobs")
+def list_verification_jobs_alias(
+    db: Session = Depends(get_db),
+    limit: int = 50,
+    offset: int = 0,
+    status: Optional[str] = None,
+):
+    """List all verification jobs (alias for frontend compatibility)"""
+    return _list_verification_jobs_impl(db, limit, offset, status)
+
+
+def _get_verification_job_impl(
+    job_id: int,
+    db: Session,
+):
+    """Internal implementation for getting verification job details"""
     org = get_or_create_default_org(db)
     
     job = db.query(EmailVerificationJobORM).filter(
@@ -535,16 +566,32 @@ def get_verification_job(
     }
 
 
-@router.get("/email/verification-jobs/{job_id}/results")
-@router.get("/verification/jobs/{job_id}/results")  # Alias for frontend compatibility
-def get_verification_job_results(
+@router.get("/email/verification-jobs/{job_id}")
+def get_verification_job(
     job_id: int,
     db: Session = Depends(get_db),
+):
+    """Get verification job details"""
+    return _get_verification_job_impl(job_id, db)
+
+
+@router.get("/verification/jobs/{job_id}")
+def get_verification_job_alias(
+    job_id: int,
+    db: Session = Depends(get_db),
+):
+    """Get verification job details (alias for frontend compatibility)"""
+    return _get_verification_job_impl(job_id, db)
+
+
+def _get_verification_job_results_impl(
+    job_id: int,
+    db: Session,
     limit: int = 100,
     offset: int = 0,
     status: Optional[str] = None,
 ):
-    """Get verification job results (individual email items)"""
+    """Internal implementation for getting verification job results"""
     org = get_or_create_default_org(db)
     
     # Verify job exists and belongs to org
@@ -584,6 +631,30 @@ def get_verification_job_results(
             for item in items
         ],
     }
+
+
+@router.get("/email/verification-jobs/{job_id}/results")
+def get_verification_job_results(
+    job_id: int,
+    db: Session = Depends(get_db),
+    limit: int = 100,
+    offset: int = 0,
+    status: Optional[str] = None,
+):
+    """Get verification job results (individual email items)"""
+    return _get_verification_job_results_impl(job_id, db, limit, offset, status)
+
+
+@router.get("/verification/jobs/{job_id}/results")
+def get_verification_job_results_alias(
+    job_id: int,
+    db: Session = Depends(get_db),
+    limit: int = 100,
+    offset: int = 0,
+    status: Optional[str] = None,
+):
+    """Get verification job results (alias for frontend compatibility)"""
+    return _get_verification_job_results_impl(job_id, db, limit, offset, status)
 
 
 # ============================================================================
@@ -630,8 +701,21 @@ def process_verification_job(job_id: int, org_id: int):
                 db.commit()
                 
                 # Verify email
-                status, reason, confidence = verify_email(item.raw_email)
+                status, reason = verify_email(item.raw_email)
                 status_str = status.value if hasattr(status, 'value') else str(status)
+                
+                # Calculate confidence based on status
+                confidence = None
+                if status == VerificationStatus.VALID:
+                    confidence = 0.95
+                elif status == VerificationStatus.RISKY:
+                    confidence = 0.7
+                elif status == VerificationStatus.UNKNOWN:
+                    confidence = 0.4
+                elif status in (VerificationStatus.DISPOSABLE, VerificationStatus.GIBBERISH):
+                    confidence = 0.1
+                else:
+                    confidence = 0.0
                 
                 item.verify_status = status_str
                 item.verify_reason = reason
