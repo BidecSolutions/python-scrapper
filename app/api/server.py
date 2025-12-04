@@ -2,7 +2,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
 import logging
+import asyncio
 
 # Configure logging early so it's available for error handling
 logging.basicConfig(level=logging.INFO)
@@ -33,6 +35,8 @@ from app.core import orm_company_search  # Company search models
 from app.core import orm_playbooks  # Playbook models
 from app.core import orm_v2  # V2 AI models
 from app.core import orm_robots  # Robot models
+from app.core import orm_saved_views  # Saved views models
+from app.core import orm_duplicates  # Duplicate detection models
 
 from app.api.routes import router as api_router
 from app.api.routes_jobs import router as jobs_router
@@ -94,12 +98,42 @@ from app.api.routes_google_maps import router as google_maps_router
 logging.basicConfig(level=logging.INFO)
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handle application startup and shutdown"""
+    # Startup
+    logger.info("Starting up application...")
+    try:
+        # Any startup tasks can go here
+        logger.info("Application startup complete.")
+    except Exception as e:
+        logger.error(f"Error during startup: {e}")
+        raise
+    
+    # Yield control to the application
+    try:
+        yield
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        # These are expected when shutting down - log but don't raise
+        logger.info("Shutting down application...")
+    except Exception as e:
+        logger.error(f"Error during runtime: {e}")
+        raise
+    finally:
+        # Shutdown cleanup
+        try:
+            logger.info("Application shutdown complete.")
+        except:
+            pass  # Ignore errors during shutdown logging
+
+
 def create_app() -> FastAPI:
     """Create and configure FastAPI application"""
     app = FastAPI(
         title="Lead Scraper API",
         version="0.1.0",
         description="API for scraping lead information from various sources",
+        lifespan=lifespan,
     )
 
     # CORS (adjust for your frontend/clients)

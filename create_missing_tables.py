@@ -27,6 +27,8 @@ from app.core import orm_company_search  # Company search models
 from app.core import orm_playbooks  # Playbook models
 from app.core import orm_v2  # V2 AI models
 from app.core import orm_robots  # Robot models
+from app.core import orm_saved_views  # Saved views models
+from app.core import orm_duplicates  # Duplicate detection models
 
 print("Creating all missing tables...")
 try:
