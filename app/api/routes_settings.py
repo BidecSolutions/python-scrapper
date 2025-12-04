@@ -46,6 +46,7 @@ def get_or_create_default_org(db: Session) -> OrganizationORM:
 
 
 @router.get("/settings/organization")
+@router.get("/organization")  # Alias for frontend compatibility
 def get_organization(db: Session = Depends(get_db)):
     """Get current organization details"""
     org = get_or_create_default_org(db)
@@ -63,6 +64,7 @@ def get_organization(db: Session = Depends(get_db)):
 
 
 @router.put("/settings/organization")
+@router.patch("/organization")  # Alias for frontend compatibility (PATCH method)
 def update_organization(
     request: UpdateOrganizationRequest,
     db: Session = Depends(get_db),
@@ -278,6 +280,7 @@ def revoke_api_key(
 
 
 @router.get("/settings/usage")
+@router.get("/usage/stats")  # Alias for frontend compatibility
 def get_usage_stats(db: Session = Depends(get_db)):
     """Get current plan and usage statistics"""
     org = get_or_create_default_org(db)

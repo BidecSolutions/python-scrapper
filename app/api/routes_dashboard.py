@@ -205,3 +205,79 @@ def get_deliverability_stats(
         "recent_jobs": len(completed_jobs),
     }
 
+
+@router.get("/dashboard/pipeline/summary")
+def get_dashboard_pipeline_summary(
+    db: Session = Depends(get_db),
+):
+    """Get pipeline summary for dashboard (alias for deals/pipeline/summary)"""
+    # Try to import deals functionality
+    try:
+        from app.core.orm_deals import DealORM, DealStage
+        from datetime import timedelta
+        
+        # Get all deals (simplified - in production should filter by workspace)
+        org = get_or_create_default_org(db)
+        
+        # Query deals by organization (simplified approach)
+        try:
+            deals = db.query(DealORM).filter(DealORM.organization_id == org.id).all()
+        except Exception:
+            # If deals table doesn't exist or query fails, return empty summary
+            deals = []
+        
+        # Calculate totals by stage
+        stage_totals = {}
+        stage_counts = {}
+        for stage in DealStage:
+            stage_deals = [d for d in deals if d.stage == stage]
+            stage_counts[stage.value] = len(stage_deals)
+            stage_totals[stage.value] = sum(float(d.value or 0) for d in stage_deals)
+        
+        # In-progress (all except won/lost)
+        in_progress_deals = [d for d in deals if d.stage not in [DealStage.won, DealStage.lost]]
+        in_progress_value = sum(float(d.value or 0) for d in in_progress_deals)
+        
+        # Won deals (last 30 days)
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        won_recent = [d for d in deals if d.stage == DealStage.won and d.won_at and d.won_at >= thirty_days_ago]
+        won_recent_value = sum(float(d.value or 0) for d in won_recent)
+        
+        # Win rate (last 90 days)
+        ninety_days_ago = datetime.utcnow() - timedelta(days=90)
+        closed_recent = [d for d in deals if (d.won_at or d.lost_at) and (d.won_at or d.lost_at) >= ninety_days_ago]
+        won_recent_90 = [d for d in closed_recent if d.stage == DealStage.won]
+        win_rate = (len(won_recent_90) / len(closed_recent) * 100) if closed_recent else 0
+        
+        # Average days to close (won deals)
+        won_deals = [d for d in deals if d.stage == DealStage.won and d.won_at and d.created_at]
+        avg_days_to_close = None
+        if won_deals:
+            days_list = [(d.won_at - d.created_at).days for d in won_deals if d.won_at and d.created_at]
+            if days_list:
+                avg_days_to_close = sum(days_list) / len(days_list)
+        
+        return {
+            "stage_counts": stage_counts,
+            "stage_totals": stage_totals,
+            "in_progress_value": in_progress_value,
+            "in_progress_count": len(in_progress_deals),
+            "won_recent_value": won_recent_value,
+            "won_recent_count": len(won_recent),
+            "win_rate": round(win_rate, 1),
+            "avg_days_to_close": round(avg_days_to_close, 1) if avg_days_to_close else None,
+            "total_deals": len(deals),
+        }
+    except ImportError:
+        # If deals module doesn't exist, return empty summary
+        return {
+            "stage_counts": {},
+            "stage_totals": {},
+            "in_progress_value": 0,
+            "in_progress_count": 0,
+            "won_recent_value": 0,
+            "won_recent_count": 0,
+            "win_rate": 0,
+            "avg_days_to_close": None,
+            "total_deals": 0,
+        }

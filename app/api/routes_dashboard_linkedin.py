@@ -33,6 +33,7 @@ class LinkedInActivityResponse(BaseModel):
 
 
 @router.get("/dashboard/linkedin", response_model=LinkedInActivityResponse)
+@router.get("/dashboard/linkedin-activity", response_model=LinkedInActivityResponse)
 def get_linkedin_activity(
     db: Session = Depends(get_db),
 ):

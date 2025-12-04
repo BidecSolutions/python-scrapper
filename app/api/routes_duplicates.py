@@ -1,6 +1,7 @@
 """API routes for Duplicate Detection & Merging"""
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import and_
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 

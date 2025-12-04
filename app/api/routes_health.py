@@ -257,6 +257,7 @@ def get_workspace_health(
 
 
 @router.get("/admin/workspaces")
+@router.get("/admin/health/all-workspaces")  # Alias for frontend compatibility
 def get_all_workspaces_health(
     db: Session = Depends(get_db),
     current_user: UserORM = Depends(require_super_admin),
@@ -314,3 +315,20 @@ def get_all_workspaces_health(
     
     return results
 
+
+@router.get("/stats")
+def get_health_stats(
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user_optional),
+    workspace: WorkspaceORM = Depends(get_current_workspace_optional),
+):
+    """Get health statistics (alias for backward compatibility)"""
+    # Return a simple stats response
+    # This endpoint is used by the frontend but doesn't have a specific implementation yet
+    # For now, return empty stats
+    return {
+        "total_leads": 0,
+        "average_score": 0,
+        "grade_distribution": {"A": 0, "B": 0, "C": 0, "D": 0, "F": 0},
+        "recommendations_summary": {},
+    }

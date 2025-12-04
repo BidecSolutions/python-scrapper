@@ -1,6 +1,7 @@
 """API routes for Lead Health Score"""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import and_
 from typing import List, Optional
 from datetime import datetime, timezone
 

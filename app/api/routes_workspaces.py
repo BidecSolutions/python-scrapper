@@ -11,7 +11,7 @@ from app.core.db import get_db
 from app.core.orm_workspaces import WorkspaceORM, WorkspaceMemberORM, WorkspaceRole
 from app.core.orm import UserORM, OrganizationORM
 from app.api.routes_settings import get_or_create_default_org
-from app.api.routes_auth import get_current_user, oauth2_scheme, oauth2_scheme
+from app.api.routes_auth import get_current_user, oauth2_scheme
 from app.services.workspace_permissions import (
     require_workspace_member,
     require_role,

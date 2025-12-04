@@ -155,6 +155,7 @@ def verify_single_email(
 # ============================================================================
 
 @router.post("/email/verify/bulk-from-leads")
+@router.post("/verification/jobs/from-leads")  # Alias for frontend compatibility
 def create_bulk_verify_job_from_leads(
     req: BulkVerifyFromLeadsRequest,
     background_tasks: BackgroundTasks,
@@ -281,6 +282,7 @@ def create_bulk_verify_job_from_leads(
 
 
 @router.post("/email/verify/bulk-from-csv")
+@router.post("/verification/jobs/from-csv")  # Alias for frontend compatibility
 def create_bulk_verify_job_from_csv(
     req: BulkVerifyFromCSVRequest,
     background_tasks: BackgroundTasks,
@@ -450,17 +452,31 @@ def find_email_for_lead(
 # ============================================================================
 
 @router.get("/email/verification-jobs")
+@router.get("/verification/jobs")  # Alias for frontend compatibility
 def list_verification_jobs(
     db: Session = Depends(get_db),
     limit: int = 50,
     offset: int = 0,
+    status: Optional[str] = None,
 ):
     """List all verification jobs for organization"""
     org = get_or_create_default_org(db)
     
-    jobs = db.query(EmailVerificationJobORM).filter(
+    query = db.query(EmailVerificationJobORM).filter(
         EmailVerificationJobORM.organization_id == org.id
-    ).order_by(EmailVerificationJobORM.created_at.desc()).limit(limit).offset(offset).all()
+    )
+    
+    # Filter by status if provided
+    if status:
+        from app.core.orm import EmailVerificationJobStatus
+        # Try to match status (case-insensitive)
+        status_lower = status.lower()
+        for enum_status in EmailVerificationJobStatus:
+            if enum_status.value.lower() == status_lower:
+                query = query.filter(EmailVerificationJobORM.status == enum_status)
+                break
+    
+    jobs = query.order_by(EmailVerificationJobORM.created_at.desc()).limit(limit).offset(offset).all()
     
     return [
         {

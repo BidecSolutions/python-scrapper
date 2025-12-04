@@ -9,11 +9,19 @@ def migrate_database():
     db_url = settings.DATABASE_URL
     
     if db_url.startswith("sqlite"):
-        # Extract database file path
-        if db_url.startswith("sqlite:///"):
-            db_path = db_url.replace("sqlite:///", "")
-        else:
-            db_path = db_url.replace("sqlite://", "")
+        # Extract database file path (handle both sync and async SQLite URLs)
+        # sqlite:///path or sqlite+aiosqlite:///path
+        db_path = db_url
+        
+        # Handle async SQLite URL first
+        if db_path.startswith("sqlite+aiosqlite:///"):
+            db_path = db_path.replace("sqlite+aiosqlite:///", "")
+        elif db_path.startswith("sqlite+aiosqlite://"):
+            db_path = db_path.replace("sqlite+aiosqlite://", "")
+        elif db_path.startswith("sqlite:///"):
+            db_path = db_path.replace("sqlite:///", "")
+        elif db_path.startswith("sqlite://"):
+            db_path = db_path.replace("sqlite://", "")
         
         if not os.path.isabs(db_path):
             db_path = os.path.join(os.getcwd(), db_path)
@@ -89,7 +97,16 @@ def migrate_database():
             # Create new tables for ML features
             print("\nCreating new tables for ML features...")
             from app.core.db import Base, engine
+            # Import all ORM modules to register tables with Base.metadata
             from app.core import orm  # Import all models
+            try:
+                from app.core import orm_segments  # Import segments models
+            except ImportError:
+                pass
+            try:
+                from app.core import orm_lists  # Import lists models
+            except ImportError:
+                pass
             
             # Create only the new tables
             new_tables = [
@@ -98,7 +115,9 @@ def migrate_database():
                 "job_segments",
                 "job_insights",
                 "playbooks",
-                "custom_fields"
+                "custom_fields",
+                "segments",
+                "lists"
             ]
             
             for table_name in new_tables:
@@ -111,10 +130,19 @@ def migrate_database():
                         if table:
                             table.create(bind=engine, checkfirst=True)
                             print(f"  - Created table: {table_name}")
+                        else:
+                            print(f"  - Warning: Table {table_name} not found in Base.metadata (may not be imported)")
                     else:
                         print(f"  - Table already exists: {table_name}")
                 except Exception as e:
                     print(f"  - Warning: Could not create {table_name}: {e}")
+            
+            # Also try to create all tables that might be missing
+            try:
+                Base.metadata.create_all(bind=engine, checkfirst=True)
+                print("  - Created any additional missing tables")
+            except Exception as e:
+                print(f"  - Warning: Error creating additional tables: {e}")
             
         except Exception as e:
             conn.rollback()
