@@ -226,6 +226,17 @@ def create_app() -> FastAPI:
     async def health():
         return {"status": "healthy"}
 
+    # Add admin health route for frontend compatibility
+    # Frontend expects /api/admin/health/all-workspaces
+    from app.api.routes_health import get_all_workspaces_health
+    from app.api.dependencies import require_super_admin
+    app.add_api_route(
+        "/api/admin/health/all-workspaces",
+        get_all_workspaces_health,
+        methods=["GET"],
+        tags=["admin", "health"]
+    )
+
     return app
 
 

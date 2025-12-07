@@ -142,28 +142,34 @@ except ImportError:
     AnthropicLLMClient = None
 
 
-# Groq Implementation (Fast & Free)
+# Groq Implementation (Fast & Free) - Using OpenAI-compatible API
 try:
-    from groq import AsyncGroq
+    from openai import AsyncOpenAI
     
     class GroqLLMClient(BaseLLMClient):
-        """Groq client (fast inference)"""
+        """Groq client using OpenAI-compatible API (fast inference)"""
         
-        def __init__(self, api_key: Optional[str] = None, model: str = "llama-3.1-70b-versatile"):
+        def __init__(self, api_key: Optional[str] = None, model: str = "llama-3.3-70b-versatile"):
             """
-            Initialize Groq client
+            Initialize Groq client using OpenAI-compatible endpoint
             
             Args:
                 api_key: Groq API key (defaults to GROQ_API_KEY env var)
-                model: Model to use (llama-3.1-70b-versatile, llama-3.1-8b-instant, mixtral-8x7b-32768, etc.)
+                model: Model to use (llama-3.3-70b-versatile, llama-3.3-70b-specdec, llama-3.1-8b-instant, etc.)
             """
             import os
             self.api_key = api_key or os.getenv("GROQ_API_KEY")
             if not self.api_key:
                 raise ValueError("Groq API key required")
             
-            self.client = AsyncGroq(api_key=self.api_key)
+            # Use OpenAI client but point to Groq's OpenAI-compatible endpoint
+            # IMPORTANT: base_url must be set to Groq, not OpenAI
+            self.client = AsyncOpenAI(
+                api_key=self.api_key,
+                base_url="https://api.groq.com/openai/v1",
+            )
             self.model = model
+            logger.info(f"GroqLLMClient initialized with base_url=https://api.groq.com/openai/v1, model={model}")
         
         async def chat_completion(
             self,
@@ -171,21 +177,38 @@ try:
             temperature: float = 0.1,
             **kwargs
         ) -> Optional[str]:
-            """Call Groq chat completion"""
+            """Call Groq chat completion via OpenAI-compatible API"""
             try:
-                response = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    temperature=temperature,
-                    response_format={"type": "json_object"},  # Force JSON output
-                    **kwargs
-                )
-                return response.choices[0].message.content
+                logger.debug(f"GroqLLMClient: Calling Groq API with model={self.model}, base_url=https://api.groq.com/openai/v1")
+                
+                # Groq supports response_format for JSON mode
+                # If response_format is in kwargs, use it; otherwise don't include it
+                create_kwargs = {
+                    "model": self.model,
+                    "messages": messages,
+                    "temperature": temperature,
+                }
+                create_kwargs.update(kwargs)
+                
+                response = await self.client.chat.completions.create(**create_kwargs)
+                
+                if not response or not response.choices or len(response.choices) == 0:
+                    logger.error("Groq API returned empty response or no choices")
+                    return None
+                
+                content = response.choices[0].message.content
+                
+                if not content:
+                    logger.error("Groq API returned response with empty content")
+                    return None
+                
+                logger.debug(f"GroqLLMClient: Received response (length={len(content)})")
+                return content
             except Exception as e:
                 logger.error(f"Groq API error: {e}", exc_info=True)
                 return None
 
 except ImportError:
-    logger.warning("Groq library not installed. Install with: pip install groq")
+    logger.warning("OpenAI library not installed. Install with: pip install openai")
     GroqLLMClient = None
 

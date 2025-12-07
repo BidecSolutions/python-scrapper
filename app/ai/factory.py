@@ -20,12 +20,23 @@ def create_llm_client(provider: Optional[str] = None, api_key: Optional[str] = N
     """
     # Auto-detect provider if not specified
     if not provider:
-        if settings.GROQ_API_KEY:
+        # Check keys and log what we find
+        groq_key = settings.GROQ_API_KEY
+        openai_key = settings.OPENAI_API_KEY
+        anthropic_key = settings.ANTHROPIC_API_KEY
+        
+        logger.info(f"LLM Factory: GROQ_API_KEY={'SET' if groq_key else 'NOT SET'}, OPENAI_API_KEY={'SET' if openai_key else 'NOT SET'}, ANTHROPIC_API_KEY={'SET' if anthropic_key else 'NOT SET'}")
+        
+        # Priority: Groq first, then OpenAI, then Anthropic
+        if groq_key:
             provider = "groq"
-        elif settings.OPENAI_API_KEY:
+            logger.info("LLM Factory: Using Groq provider")
+        elif openai_key:
             provider = "openai"
-        elif settings.ANTHROPIC_API_KEY:
+            logger.info("LLM Factory: Using OpenAI provider (Groq not available)")
+        elif anthropic_key:
             provider = "anthropic"
+            logger.info("LLM Factory: Using Anthropic provider (Groq/OpenAI not available)")
         else:
             logger.warning("No LLM API key found in environment. AI extraction will be disabled.")
             return None
@@ -43,13 +54,17 @@ def create_llm_client(provider: Optional[str] = None, api_key: Optional[str] = N
                 return None
             return GroqLLMClient(
                 api_key=key,
-                model=model or "llama-3.1-70b-versatile"
+                model=model or settings.GROQ_MODEL or "llama-3.3-70b-versatile"
             )
         except Exception as e:
             logger.error(f"Error creating Groq client: {e}")
             return None
     
     elif provider.lower() == "openai":
+        # Warn if Groq key is also available (should use Groq instead)
+        if settings.GROQ_API_KEY:
+            logger.warning(f"WARNING: OPENAI_API_KEY is set, but GROQ_API_KEY is also available. Consider using Groq instead for better performance and cost.")
+        
         try:
             from app.ai.llm_clients import OpenAILLMClient
             if OpenAILLMClient is None:
@@ -59,12 +74,13 @@ def create_llm_client(provider: Optional[str] = None, api_key: Optional[str] = N
             if not key:
                 logger.error("OpenAI API key not found")
                 return None
+            logger.info(f"Creating OpenAILLMClient with model: {model or 'gpt-4o-mini'}")
             return OpenAILLMClient(
                 api_key=key,
                 model=model or "gpt-4o-mini"
             )
         except Exception as e:
-            logger.error(f"Error creating OpenAI client: {e}")
+            logger.error(f"Error creating OpenAI client: {e}", exc_info=True)
             return None
     
     elif provider.lower() == "anthropic":

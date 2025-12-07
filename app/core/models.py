@@ -35,6 +35,7 @@ class Lead:
     # Content-based tags
     service_tags: List[str] = field(default_factory=list)
     audience_tags: List[str] = field(default_factory=list)
+    tags: List[str] = field(default_factory=list)  # General-purpose tags for filtering
     
     # Contact person
     contact_person_name: Optional[str] = None
@@ -57,3 +58,4 @@ class Lead:
     
     # Metadata
     metadata: Dict[str, Any] = field(default_factory=dict)
+    meta: Dict[str, Any] = field(default_factory=dict)  # Alias for metadata compatibility

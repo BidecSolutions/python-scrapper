@@ -7,8 +7,9 @@ try:
     from dotenv import load_dotenv
     import os
     # Try to load .env, but handle errors gracefully
+    # Use override=True to ensure .env values take precedence over system env vars
     try:
-        load_dotenv()
+        load_dotenv(override=True)
     except (ValueError, UnicodeDecodeError) as e:
         # If .env has issues (null chars, encoding), try to load it manually
         env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env')
@@ -21,8 +22,8 @@ try:
                             key, value = line.split('=', 1)
                             key = key.strip()
                             value = value.strip().strip('"').strip("'")
-                            # Only set if not already in environment
-                            if key and key not in os.environ:
+                            # Set the value (override existing if present, to match load_dotenv(override=True) behavior)
+                            if key:
                                 os.environ[key] = value
             except Exception:
                 pass  # If manual load fails, just use system env vars
@@ -44,6 +45,13 @@ class Settings:
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
     ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
     GROQ_API_KEY: Optional[str] = os.getenv("GROQ_API_KEY")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")  # Default to current model
+    
+    # Debug: Log which keys are found (without exposing values)
+    if not GROQ_API_KEY and not OPENAI_API_KEY and not ANTHROPIC_API_KEY:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning("No LLM API keys found in environment. Set GROQ_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY in .env file")
     
     # Geocoding API Keys
     OPENCAGE_API_KEY: Optional[str] = os.getenv("OPENCAGE_API_KEY")

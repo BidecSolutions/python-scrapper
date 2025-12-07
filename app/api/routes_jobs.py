@@ -1,9 +1,9 @@
 """Job-based API routes with database persistence"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from typing import List
 from sqlalchemy.orm import Session
 from app.api.schemas import ScrapeRequest, ScrapeResponse, LeadOut, JobResponse
-from app.core.db import get_db
+from app.core.db import get_db, SessionLocal
 from app.core.orm import ScrapeJobORM, JobStatus, OrganizationORM, PlanTier, LeadORM
 from app.scraper.async_crawler import AsyncCrawler
 from app.services.async_lead_service import AsyncLeadService
@@ -11,6 +11,7 @@ from app.services.lead_repo import upsert_leads
 from app.sources.google_places import GooglePlacesSource
 from app.sources.google_search import GoogleSearchSource
 from app.sources.web_search import WebSearchSource
+from app.sources.basic_web_search import BasicWebSearchSource
 # YellowPages disabled per user request
 # from app.sources.yellow_pages import YellowPagesSource
 # For now, we'll create a default org for testing
@@ -99,9 +100,56 @@ def get_jobs(
             "total_targets": job.total_targets,
             "processed_targets": job.processed_targets or 0,
             "extract_config": job.extract_config or {},
+            "ai_status": job.ai_status or "idle",
+            "ai_summary": job.ai_summary,
+            "ai_segments": job.ai_segments or [],
+            "ai_error": job.ai_error,
         }
         for job in jobs
     ]
+
+
+# AI Insights endpoint - must come BEFORE /jobs/{job_id} to avoid route conflicts
+@router.post("/jobs/{job_id}/ai-insights")
+async def trigger_job_ai_insights(
+    job_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Trigger AI insights generation for a completed job"""
+    org_id = get_or_create_default_org(db)
+    
+    job = db.query(ScrapeJobORM).filter(
+        ScrapeJobORM.id == job_id,
+        ScrapeJobORM.organization_id == org_id
+    ).first()
+    
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    if job.status != JobStatus.completed and job.status != JobStatus.completed_with_warnings:
+        raise HTTPException(
+            status_code=400,
+            detail="Job must be completed before generating AI insights."
+        )
+    
+    # Mark as running and clear previous error
+    job.ai_status = "running"
+    job.ai_error = None
+    db.commit()
+    
+    # Run in background
+    from app.services.ai_insights_service import generate_job_ai_insights
+    background_tasks.add_task(generate_job_ai_insights, db, job_id, org_id)
+    
+    # Return updated job
+    return {
+        "id": job.id,
+        "ai_status": job.ai_status,
+        "ai_summary": job.ai_summary,
+        "ai_segments": job.ai_segments or [],
+        "ai_error": job.ai_error,
+    }
 
 
 @router.get("/jobs/{job_id}", response_model=dict)
@@ -140,6 +188,115 @@ def get_job(
         "total_targets": job.total_targets,
         "processed_targets": job.processed_targets or 0,
         "extract_config": job.extract_config or {},
+        "ai_status": job.ai_status or "idle",
+        "ai_summary": job.ai_summary,
+        "ai_segments": job.ai_segments or [],
+        "ai_error": job.ai_error,
+    }
+
+
+@router.post("/jobs/{job_id}/ai-segments/{segment_index}/saved-view")
+async def create_ai_segment_saved_view(
+    job_id: int,
+    segment_index: int,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Create a Saved View from an AI segment"""
+    org_id = get_or_create_default_org(db)
+    
+    job = db.query(ScrapeJobORM).filter(
+        ScrapeJobORM.id == job_id,
+        ScrapeJobORM.organization_id == org_id
+    ).first()
+    
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    if job.ai_status != "ready" or not job.ai_segments:
+        raise HTTPException(
+            status_code=400,
+            detail="AI segments not available for this job."
+        )
+    
+    segments = job.ai_segments or []
+    if segment_index < 0 or segment_index >= len(segments):
+        raise HTTPException(status_code=400, detail="Invalid segment index.")
+    
+    segment = segments[segment_index]
+    
+    # Get workspace_id if available
+    workspace_id = job.workspace_id
+    
+    from app.services.ai_segment_actions import create_saved_view_from_ai_segment
+    view = create_saved_view_from_ai_segment(
+        db,
+        org_id=org_id,
+        workspace_id=workspace_id,
+        user_id=job.created_by_user_id,
+        job=job,
+        segment=segment,
+        segment_index=segment_index,
+    )
+    
+    return {
+        "id": view.id,
+        "name": view.name,
+        "page_type": view.page_type,
+        "filters": view.filters,
+        "is_shared": view.is_shared,
+        "created_at": view.created_at.isoformat() if view.created_at else None,
+    }
+
+
+@router.post("/jobs/{job_id}/ai-segments/{segment_index}/playbook")
+async def create_ai_segment_playbook(
+    job_id: int,
+    segment_index: int,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Create a Playbook Blueprint from an AI segment"""
+    org_id = get_or_create_default_org(db)
+    
+    job = db.query(ScrapeJobORM).filter(
+        ScrapeJobORM.id == job_id,
+        ScrapeJobORM.organization_id == org_id
+    ).first()
+    
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    if job.ai_status != "ready" or not job.ai_segments:
+        raise HTTPException(
+            status_code=400,
+            detail="AI segments not available for this job."
+        )
+    
+    segments = job.ai_segments or []
+    if segment_index < 0 or segment_index >= len(segments):
+        raise HTTPException(status_code=400, detail="Invalid segment index.")
+    
+    segment = segments[segment_index]
+    
+    # Get workspace_id if available
+    workspace_id = job.workspace_id
+    
+    from app.services.ai_segment_actions import create_playbook_from_ai_segment
+    playbook = create_playbook_from_ai_segment(
+        db,
+        org_id=org_id,
+        workspace_id=workspace_id,
+        user_id=job.created_by_user_id,
+        job=job,
+        segment=segment,
+        segment_index=segment_index,
+    )
+    
+    return {
+        "id": playbook.id,
+        "name": playbook.name,
+        "description": playbook.description,
+        "status": playbook.status.value if hasattr(playbook.status, "value") else str(playbook.status),
+        "created_at": playbook.created_at.isoformat() if playbook.created_at else None,
     }
 
 
@@ -189,11 +346,13 @@ def get_job_leads(
 @router.post("/jobs/run-once", response_model=dict)
 async def run_scrape_job(
     payload: ScrapeRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> dict:
-    """Run a scrape job and save results to database"""
+    """Create a scrape job and run it in the background - returns immediately"""
     import logging
-    from datetime import datetime
+    from datetime import datetime, timezone
+    from app.api.background_job_executor import run_job_in_background
     logger = logging.getLogger(__name__)
     
     job = None
@@ -203,7 +362,7 @@ async def run_scrape_job(
         db.commit()  # Commit org creation separately
         logger.info(f"Using organization ID: {org_id}")
         
-        # Create job
+        # Create job with "pending" status (will change to "running" when background task starts)
         extract_config_dict = payload.extract.dict() if payload.extract else {}
         job = ScrapeJobORM(
             organization_id=org_id,
@@ -211,192 +370,33 @@ async def run_scrape_job(
             location=payload.location,
             max_results=payload.max_results,
             max_pages_per_site=payload.max_pages_per_site,
-            status=JobStatus.running,
+            status=JobStatus.pending,  # Start as pending, will change to running in background
             extract_config=extract_config_dict,
             processed_targets=0,
         )
         db.add(job)
         db.flush()  # Get job.id (sync, no await)
-        logger.info(f"Created job {job.id}")
+        logger.info(f"Created job {job.id}, scheduling background execution")
         
-        job.started_at = datetime.utcnow()
-        db.commit()  # Commit initial job state
-
-        # 2) Run scraper (outside of DB transaction to avoid greenlet issues)
-        sources = []
-        source_errors = []
+        # Prepare payload dict for background task
+        payload_dict = {
+            "niche": payload.niche,
+            "location": payload.location,
+            "max_results": payload.max_results,
+            "max_pages_per_site": payload.max_pages_per_site,
+            "sources": payload.sources,
+            "extract": extract_config_dict,
+        }
         
-        # Get requested sources from payload (default to all if not specified)
-        requested_sources = payload.sources if payload.sources else ["google_search", "google_places", "web_search"]
-        use_crawling = payload.sources is None or "crawling" in payload.sources
+        # Schedule background execution
+        background_tasks.add_task(run_job_in_background, job.id, org_id, payload_dict)
         
-        # Try to initialize Google Places source (if requested)
-        if "google_places" in requested_sources:
-            try:
-                google_source = GooglePlacesSource()
-                sources.append(google_source)
-                logger.info("Google Places source initialized successfully")
-            except ValueError as e:
-                error_msg = f"Google Places source unavailable: {str(e)}"
-                logger.warning(error_msg)
-                source_errors.append(error_msg)
-            except Exception as e:
-                error_msg = f"Google Places source error: {str(e)}"
-                logger.warning(error_msg)
-                source_errors.append(error_msg)
-        
-        # Try to initialize Google Custom Search source (if requested)
-        if "google_search" in requested_sources:
-            try:
-                google_search_source = GoogleSearchSource()
-                sources.append(google_search_source)
-                logger.info("Google Custom Search source initialized successfully")
-            except ValueError as e:
-                error_msg = f"Google Custom Search source unavailable: {str(e)}"
-                logger.warning(error_msg)
-                source_errors.append(error_msg)
-            except Exception as e:
-                error_msg = f"Google Custom Search source error: {str(e)}"
-                logger.warning(error_msg)
-                source_errors.append(error_msg)
-        
-        # Try to initialize Web Search (Bing) source (if requested)
-        if "web_search" in requested_sources:
-            try:
-                web_source = WebSearchSource()
-                if web_source.api_key:
-                    sources.append(web_source)
-                    logger.info("Web Search (Bing) source initialized successfully")
-                else:
-                    logger.warning("Web Search source skipped: BING_SEARCH_API_KEY not set")
-                    source_errors.append("Web Search source unavailable: BING_SEARCH_API_KEY not set")
-            except Exception as e:
-                error_msg = f"Web Search source error: {str(e)}"
-                logger.warning(error_msg)
-                source_errors.append(error_msg)
-        
-        # YellowPages source disabled per user request
-        # Try to initialize YellowPages source
-        # try:
-        #     yellow_pages_source = YellowPagesSource()
-        #     sources.append(yellow_pages_source)
-        #     logger.info("YellowPages source initialized successfully")
-        # except Exception as e:
-        #     error_msg = f"YellowPages source error: {str(e)}"
-        #     logger.warning(error_msg)
-        #     source_errors.append(error_msg)
-        
-        # If no sources available, return empty leads list with helpful error
-        if not sources:
-            error_message = "No scraping sources available. " + "; ".join(source_errors) if source_errors else "Please configure at least one API key (GOOGLE_PLACES_API_KEY, GOOGLE_SEARCH_API_KEY+GOOGLE_SEARCH_CX, or BING_SEARCH_API_KEY) in your .env file."
-            logger.warning(error_message)
-            job.error_message = error_message
-            leads = []
-        else:
-            try:
-                # Only use crawler if crawling is enabled
-                crawler = AsyncCrawler(max_pages=payload.max_pages_per_site) if use_crawling else None
-                service = AsyncLeadService(
-                    sources=sources, 
-                    crawler=crawler,
-                    extract_config=extract_config_dict,
-                    progress_callback=lambda processed, total: _update_job_progress(db, job.id, processed, total)
-                )
-                logger.info(f"Starting lead search with {len(sources)} source(s): {[type(s).__name__ for s in sources]}")
-                
-                # First, get raw leads to determine total_targets
-                raw_leads = []
-                for source in sources:
-                    try:
-                        for lead in source.search(payload.niche, payload.location):
-                            raw_leads.append(lead)
-                            if len(raw_leads) >= payload.max_results:
-                                break
-                    except Exception as e:
-                        logger.warning(f"Source {source.__class__.__name__} failed: {e}")
-                        continue
-                    if len(raw_leads) >= payload.max_results:
-                        break
-                
-                # Set total_targets (websites to process)
-                websites_to_process = len([l for l in raw_leads if l.website])
-                job.total_targets = websites_to_process
-                db.commit()
-                logger.info(f"Job {job.id}: Processing {websites_to_process} websites")
-                
-                # Now enrich leads with progress tracking
-                leads = await service.search_leads(
-                    niche=payload.niche,
-                    location=payload.location,
-                    max_results=payload.max_results,
-                )
-                logger.info(f"Found {len(leads)} leads from scraping")
-            except Exception as scrape_error:
-                error_msg = f"Error during scraping: {str(scrape_error)}"
-                logger.error(error_msg)
-                import traceback
-                logger.error(traceback.format_exc())
-                job.error_message = error_msg
-                leads = []  # Continue with empty list if scraping fails
-
-        # 3) Save to DB
-        saved_leads = []
-        if leads:
-            try:
-                saved_leads = upsert_leads(db, leads, job_id=job.id, organization_id=org_id, commit=False)
-            except Exception as save_error:
-                logger.error(f"Error saving leads: {save_error}")
-                import traceback
-                logger.error(traceback.format_exc())
-                saved_leads = []
-        
-        # Update job status
-        job.status = JobStatus.completed
-        job.result_count = len(saved_leads)
-        job.completed_at = datetime.utcnow()
-        if job.started_at:
-            duration = (job.completed_at - job.started_at).total_seconds()
-            job.duration_seconds = int(duration)
-        
-        # Commit everything together
+        # Commit job creation
         db.commit()
-        logger.info(f"Job {job.id} completed successfully with {len(saved_leads)} leads")
         
-        # Post-processing: ML scoring, segments, insights, niche classification (async, don't block response)
-        try:
-            from app.services.ml_scoring_service import MLScoringService
-            from app.services.segmentation_service import SegmentationService
-            from app.services.insights_service import InsightsService
-            from app.services.niche_classifier import NicheClassifier
-            
-            # Classify and normalize niche
-            try:
-                NicheClassifier.normalize_niche_for_job(db, job.id)
-            except Exception as e:
-                logger.warning(f"Niche classification failed: {e}")
-            
-            # Score leads with ML (if model exists)
-            scoring_service = MLScoringService()
-            lead_ids = [l.id for l in saved_leads]
-            scoring_service.score_leads_for_org(db, org_id, lead_ids)
-            
-            # Create segments if enough leads
-            if len(saved_leads) >= 10:
-                SegmentationService.create_segments_for_job(db, job.id)
-            
-            # Generate insights
-            InsightsService.generate_insights_for_job(db, job.id)
-            
-            # Generate embeddings for lookalike finder (optional, can be done lazily)
-            # For now, embeddings are generated on-demand when similar leads are requested
-            
-            # Run QA checks on leads (optional, can be done lazily)
-            # For now, QA checks are run on-demand via API endpoint
-            
-        except Exception as e:
-            logger.warning(f"Post-processing failed for job {job.id}: {e}")
-            # Don't fail the job if post-processing fails
-
+        logger.info(f"Job {job.id} scheduled for background execution, returning immediately")
+        
+        # Return job immediately (scraping will happen in background)
         return {
             "id": job.id,
             "niche": job.niche,

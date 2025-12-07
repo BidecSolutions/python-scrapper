@@ -13,12 +13,12 @@ class InsightsService:
     """Service for generating market insights using LLM"""
     
     @staticmethod
-    def generate_insights_for_job(
+    async def generate_insights_for_job(
         db: Session,
         job_id: int
     ) -> Optional[JobInsightORM]:
         """
-        Generate market insights for a job
+        Generate market insights for a job (async)
         
         Returns:
             JobInsightORM instance or None if generation failed
@@ -38,8 +38,8 @@ class InsightsService:
         # Prepare sample lead profiles
         sample_profiles = InsightsService._prepare_sample_profiles(leads[:20])
         
-        # Generate insights using LLM
-        insights_text = InsightsService._generate_insights_text(
+        # Generate insights using LLM (async)
+        insights_text = await InsightsService._generate_insights_text(
             job.niche,
             job.location,
             stats,
@@ -130,13 +130,13 @@ class InsightsService:
         return profiles
     
     @staticmethod
-    def _generate_insights_text(
+    async def _generate_insights_text(
         niche: str,
         location: Optional[str],
         stats: Dict,
         sample_profiles: List[Dict]
     ) -> Optional[str]:
-        """Generate insights text using LLM"""
+        """Generate insights text using LLM (async)"""
         try:
             from app.ai.factory import create_llm_client
             llm_client = create_llm_client()
@@ -167,21 +167,11 @@ Write:
 Keep the language concrete and business-focused. Avoid generic advice.
 Format as markdown with bullet points."""
 
-            # Use async chat completion
-            import asyncio
-            import inspect
+            # LLM client is async, await it directly
             try:
-                # Check if it's async
-                if inspect.iscoroutinefunction(llm_client.chat_completion):
-                    # It's async, use asyncio.run
-                    result = asyncio.run(llm_client.chat_completion([
-                        {"role": "user", "content": prompt}
-                    ], temperature=0.7))
-                else:
-                    # It's a regular function, call directly
-                    result = llm_client.chat_completion([
-                        {"role": "user", "content": prompt}
-                    ], temperature=0.7)
+                result = await llm_client.chat_completion([
+                    {"role": "user", "content": prompt}
+                ], temperature=0.7)
                 if result:
                     return result
             except Exception as e:

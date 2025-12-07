@@ -25,13 +25,13 @@ class SegmentationService:
     MIN_LEADS_FOR_CLUSTERING = 10
     
     @staticmethod
-    def create_segments_for_job(
+    async def create_segments_for_job(
         db: Session,
         job_id: int,
         num_clusters: Optional[int] = None
     ) -> List[JobSegmentORM]:
         """
-        Create segments for a job using clustering
+        Create segments for a job using clustering (async)
         
         Returns:
             List of created segments
@@ -99,8 +99,8 @@ class SegmentationService:
             if not cluster_leads:
                 continue
             
-            # Generate segment name using LLM (simplified for now - use sample leads)
-            segment_name, description = SegmentationService._name_segment(cluster_leads, job.niche)
+            # Generate segment name using LLM (async)
+            segment_name, description = await SegmentationService._name_segment(cluster_leads, job.niche)
             
             segment = JobSegmentORM(
                 job_id=job_id,
@@ -122,16 +122,13 @@ class SegmentationService:
         return segments
     
     @staticmethod
-    def _name_segment(leads: List[LeadORM], niche: str) -> Tuple[str, str]:
+    async def _name_segment(leads: List[LeadORM], niche: str) -> Tuple[str, str]:
         """
-        Generate segment name and description using LLM
+        Generate segment name and description using LLM (async)
         
         Returns:
             (name, description)
         """
-        # For now, use a simple heuristic
-        # In production, call Groq LLM with sample leads
-        
         # Collect sample data
         sample_names = [lead.name for lead in leads[:10] if lead.name]
         sample_cities = [lead.city for lead in leads[:10] if lead.city]
@@ -170,16 +167,10 @@ Format:
 Name: [name]
 Description: [description]"""
                 
-                import asyncio
-                import inspect
-                if inspect.iscoroutinefunction(llm_client.chat_completion):
-                    result = asyncio.run(llm_client.chat_completion([
-                        {"role": "user", "content": prompt}
-                    ], temperature=0.7))
-                else:
-                    result = llm_client.chat_completion([
-                        {"role": "user", "content": prompt}
-                    ], temperature=0.7)
+                # LLM client is async, await it directly
+                result = await llm_client.chat_completion([
+                    {"role": "user", "content": prompt}
+                ], temperature=0.7)
                 
                 if result:
                     # Parse response

@@ -55,12 +55,12 @@ class NicheClassifier:
     """Classify and normalize business niches"""
     
     @staticmethod
-    def classify_niche(
+    async def classify_niche(
         raw_niche: str,
         use_llm: bool = True
     ) -> Dict[str, any]:
         """
-        Classify a raw niche string into canonical category
+        Classify a raw niche string into canonical category (async)
         
         Returns:
             {
@@ -99,7 +99,7 @@ class NicheClassifier:
         # Try LLM classification if available
         if use_llm:
             try:
-                result = NicheClassifier._llm_classify(raw_niche)
+                result = await NicheClassifier._llm_classify(raw_niche)
                 if result:
                     return result
             except Exception as e:
@@ -121,8 +121,8 @@ class NicheClassifier:
         }
     
     @staticmethod
-    def _llm_classify(raw_niche: str) -> Optional[Dict]:
-        """Use LLM to classify niche"""
+    async def _llm_classify(raw_niche: str) -> Optional[Dict]:
+        """Use LLM to classify niche (async)"""
         try:
             from app.ai.factory import create_llm_client
             llm_client = create_llm_client()
@@ -145,16 +145,10 @@ Respond in JSON format:
 
 If unsure, use "other" as canonical."""
 
-            import asyncio
-            import inspect
-            if inspect.iscoroutinefunction(llm_client.chat_completion):
-                result = asyncio.run(llm_client.chat_completion([
-                    {"role": "user", "content": prompt}
-                ], temperature=0.3))
-            else:
-                result = llm_client.chat_completion([
-                    {"role": "user", "content": prompt}
-                ], temperature=0.3)
+            # LLM client is async, await it directly
+            result = await llm_client.chat_completion([
+                {"role": "user", "content": prompt}
+            ], temperature=0.3)
             
             if result:
                 import json
@@ -170,25 +164,23 @@ If unsure, use "other" as canonical."""
         return None
     
     @staticmethod
-    def normalize_niche_for_job(
+    async def normalize_niche_for_job(
         db: Session,
         job_id: int
     ) -> Optional[str]:
-        """Normalize niche for a job and update it"""
+        """Normalize niche for a job and update it (async)"""
         job = db.query(ScrapeJobORM).filter(ScrapeJobORM.id == job_id).first()
         if not job:
             return None
         
-        classification = NicheClassifier.classify_niche(job.niche)
+        classification = await NicheClassifier.classify_niche(job.niche)
         
-        # Store canonical niche in job metadata if needed
-        if not hasattr(job, 'canonical_niche'):
-            # For now, we'll store it in meta or a new field
-            if not job.meta:
-                job.meta = {}
-            job.meta['canonical_niche'] = classification['canonical']
-            job.meta['niche_subspecialty'] = classification['subspecialty']
-            db.commit()
+        # Store canonical niche in job metadata
+        if not job.meta:
+            job.meta = {}
+        job.meta['canonical_niche'] = classification['canonical']
+        job.meta['niche_subspecialty'] = classification['subspecialty']
+        db.commit()
         
         return classification['canonical']
 

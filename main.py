@@ -17,8 +17,8 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
-    # Get port from environment variable (Replit provides this)
-    port = int(os.environ.get("PORT", 8000))
+    # Get port from environment variable (default to 8002)
+    port = int(os.environ.get("PORT", 8002))
     
     try:
         # Run the FastAPI app

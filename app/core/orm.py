@@ -261,6 +261,15 @@ class ScrapeJobORM(Base):
     total_pages_crawled = Column(Integer, nullable=False, default=0)
     sources_used = Column(ArrayType(String), nullable=True)  # ["google_places", "web_search"]
     
+    # AI Insights fields
+    ai_status = Column(String(50), nullable=False, default="idle", index=True)  # "idle" | "running" | "ready" | "error" | "disabled"
+    ai_summary = Column(Text, nullable=True)  # LLM-generated summary paragraph
+    ai_segments = Column(JsonType, nullable=True)  # List of segments: [{"name": "...", "description": "...", "ideal_use_case": "...", "rough_percentage_of_leads": 40}]
+    ai_error = Column(Text, nullable=True)  # Error message if AI generation failed
+    
+    # Metadata for niche classification and other AI features
+    meta = Column(JsonType, nullable=False, default=dict)  # {"canonical_niche": "...", "niche_subspecialty": [...], ...}
+    
     # Relationships
     organization = relationship("OrganizationORM", back_populates="jobs")
     leads = relationship("LeadORM", back_populates="job", cascade="all, delete-orphan")

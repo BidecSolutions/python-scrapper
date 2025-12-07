@@ -1,11 +1,14 @@
 """Asynchronous web crawler"""
 import asyncio
+import logging
 from collections import deque
 from typing import AsyncIterator, Set, Tuple
 from urllib.parse import urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class AsyncCrawler:
@@ -42,7 +45,15 @@ class AsyncCrawler:
                 async with semaphore:
                     try:
                         resp = await client.get(url)
+                        # Handle 403 Forbidden gracefully
+                        if resp.status_code == 403:
+                            logger.debug(f"Skipping {url}: 403 Forbidden (site blocked scraping)")
+                            continue
                         resp.raise_for_status()
+                    except httpx.HTTPStatusError as e:
+                        if e.response.status_code == 403:
+                            logger.debug(f"Skipping {url}: 403 Forbidden (site blocked scraping)")
+                        continue
                     except Exception:
                         continue
                 

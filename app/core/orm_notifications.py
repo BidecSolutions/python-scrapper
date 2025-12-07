@@ -21,6 +21,8 @@ class NotificationType(str, PyEnum):
     playbook_failed = "playbook_failed"
     playbook_completed = "playbook_completed"
     critical_audit = "critical_audit"
+    job_completed = "job_completed"
+    job_failed = "job_failed"
 
 
 class NotificationORM(Base):
