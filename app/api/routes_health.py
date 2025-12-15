@@ -1,19 +1,25 @@
 """Health & Quality Dashboard API routes"""
 import logging
-from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, desc
-from pydantic import BaseModel
-from datetime import datetime, date, timedelta
+from datetime import date, timedelta
+from typing import Any, Dict, List, Literal, Optional
 
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
+from sqlalchemy import desc, func
+from sqlalchemy.orm import Session
+
+from app.api.dependencies import require_super_admin
+from app.api.routes_auth import get_current_user
+from app.api.routes_workspaces import (
+    get_current_user_optional,
+    get_current_workspace,
+    get_current_workspace_optional,
+)
+from app.core.config import settings
 from app.core.db import get_db
+from app.core.orm import UserORM
 from app.core.orm_health import WorkspaceDailyMetricsORM, WorkspaceHealthSnapshotORM
 from app.core.orm_workspaces import WorkspaceORM
-from app.api.routes_auth import get_current_user
-from app.api.routes_workspaces import get_current_workspace, get_current_user_optional, get_current_workspace_optional
-from app.core.orm import UserORM
-from app.api.dependencies import require_super_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/health", tags=["health"])
@@ -42,6 +48,13 @@ class WorkspaceHealthSummary(BaseModel):
     bounce_rate: float
     jobs_failed_recent: int
     linkedin_failure_rate: float
+
+
+class LLMHealthResponse(BaseModel):
+    configured: bool
+    provider: Optional[str]
+    status: Literal["ok", "missing_key", "error"]
+    message: str
 
 
 # ============================================================================
@@ -314,6 +327,58 @@ def get_all_workspaces_health(
         ))
     
     return results
+
+
+@router.get("/llm", response_model=LLMHealthResponse)
+def get_llm_health(current_user: UserORM = Depends(get_current_user)) -> LLMHealthResponse:
+    """Surface-level diagnostics for LLM configuration."""
+    key_state = {
+        "groq": bool(settings.GROQ_API_KEY),
+        "openai": bool(settings.OPENAI_API_KEY),
+        "anthropic": bool(settings.ANTHROPIC_API_KEY),
+    }
+    configured = any(key_state.values())
+
+    if not configured:
+        return LLMHealthResponse(
+            configured=False,
+            provider=None,
+            status="missing_key",
+            message="No LLM API keys configured. Set GROQ_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY.",
+        )
+
+    preferred_provider = next(
+        (name for name in ("groq", "openai", "anthropic") if key_state[name]),
+        None,
+    )
+
+    try:
+        from app.ai.factory import create_llm_client
+
+        client = create_llm_client(provider=preferred_provider)
+        if client is None:
+            return LLMHealthResponse(
+                configured=True,
+                provider=preferred_provider,
+                status="error",
+                message="Failed to initialize LLM client. Ensure the SDK is installed and keys are valid.",
+            )
+
+        provider_name = getattr(client, "provider", preferred_provider)
+        return LLMHealthResponse(
+            configured=True,
+            provider=provider_name,
+            status="ok",
+            message=f"LLM client for {provider_name or preferred_provider} initialized successfully.",
+        )
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.error("LLM health check failed: %s", exc, exc_info=True)
+        return LLMHealthResponse(
+            configured=True,
+            provider=preferred_provider,
+            status="error",
+            message=f"LLM initialization error: {exc}",
+        )
 
 
 @router.get("/stats")

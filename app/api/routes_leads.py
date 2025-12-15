@@ -1,18 +1,40 @@
 """Lead management API routes"""
-from fastapi import APIRouter, Depends, Query, HTTPException
-from fastapi.responses import Response
-from typing import List, Optional, Union, Dict, Any
-from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_, String
+from typing import Any, Dict, List, Optional, Union
 
-from app.core.db import get_db
-from app.core.orm import LeadORM, OrganizationORM, PlanTier
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
+from sqlalchemy import String, or_
+from sqlalchemy.orm import Session
+
+from app.api.routes_auth import get_current_user
+from app.api.routes_workspaces import get_current_workspace
 from app.api.schemas import LeadOut
+from app.core.db import get_db
+from app.core.orm import LeadORM, UserORM
+from app.core.orm_workspaces import WorkspaceORM
 from app.services.export_service import ExportService
-# For now, we'll create a default org for testing
-# In production, use: from app.api.middleware import get_organization_from_api_key
 
 router = APIRouter()
+
+
+def _require_org_and_workspace(
+    current_user: UserORM,
+    workspace: WorkspaceORM,
+) -> tuple[int, int]:
+    """Ensure the user has an org and the workspace belongs to that org."""
+    if not current_user.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is not associated with an organization.",
+        )
+
+    if workspace.organization_id != current_user.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Workspace does not belong to your organization.",
+        )
+
+    return current_user.organization_id, workspace.id
 
 
 def _normalize_tech_stack(tech_stack: Union[List[str], Dict[str, Any], None]) -> List[str]:
@@ -46,24 +68,6 @@ def _normalize_tech_stack(tech_stack: Union[List[str], Dict[str, Any], None]) ->
     return [str(tech_stack)] if tech_stack else []
 
 
-def get_or_create_default_org(db: Session) -> int:
-    """Get or create default organization for testing"""
-    # Check if default org exists
-    org = db.query(OrganizationORM).filter(OrganizationORM.slug == "default").first()
-    
-    if not org:
-        # Create default org
-        org = OrganizationORM(
-            name="Default Organization",
-            slug="default",
-            plan_tier=PlanTier.pro,
-        )
-        db.add(org)
-        db.flush()
-    
-    return org.id
-
-
 @router.get("/leads", response_model=List[LeadOut])
 def get_leads(
     job_id: Optional[int] = Query(None, description="Filter by job ID"),
@@ -78,11 +82,16 @@ def get_leads(
     limit: int = Query(100, le=500, description="Maximum number of leads"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
 ) -> List[LeadOut]:
     """Get leads with optional filters and global search"""
-    org_id = get_or_create_default_org(db)
+    org_id, workspace_id = _require_org_and_workspace(current_user, workspace)
     # Build query
-    query = db.query(LeadORM).filter(LeadORM.organization_id == org_id)
+    query = db.query(LeadORM).filter(
+        LeadORM.organization_id == org_id,
+        or_(LeadORM.workspace_id == workspace_id, LeadORM.workspace_id.is_(None)),
+    )
     
     # Apply filters
     if job_id:
@@ -159,10 +168,15 @@ def export_leads_csv(
     min_score: Optional[float] = Query(None),
     search: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
 ):
     """Export leads to CSV"""
-    org_id = get_or_create_default_org(db)
-    query = db.query(LeadORM).filter(LeadORM.organization_id == org_id)
+    org_id, workspace_id = _require_org_and_workspace(current_user, workspace)
+    query = db.query(LeadORM).filter(
+        LeadORM.organization_id == org_id,
+        or_(LeadORM.workspace_id == workspace_id, LeadORM.workspace_id.is_(None)),
+    )
     
     # Apply same filters as get_leads
     if job_id:
@@ -220,10 +234,15 @@ def export_leads_excel(
     min_score: Optional[float] = Query(None),
     search: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
 ):
     """Export leads to Excel"""
-    org_id = get_or_create_default_org(db)
-    query = db.query(LeadORM).filter(LeadORM.organization_id == org_id)
+    org_id, workspace_id = _require_org_and_workspace(current_user, workspace)
+    query = db.query(LeadORM).filter(
+        LeadORM.organization_id == org_id,
+        or_(LeadORM.workspace_id == workspace_id, LeadORM.workspace_id.is_(None)),
+    )
     
     # Apply same filters as get_leads
     if job_id:
@@ -283,13 +302,20 @@ def export_leads_excel(
 def get_lead(
     lead_id: int,
     db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
 ) -> LeadOut:
     """Get a single lead by ID"""
-    org_id = get_or_create_default_org(db)
-    lead = db.query(LeadORM).filter(
-        LeadORM.id == lead_id,
-        LeadORM.organization_id == org_id
-    ).first()
+    org_id, workspace_id = _require_org_and_workspace(current_user, workspace)
+    lead = (
+        db.query(LeadORM)
+        .filter(
+            LeadORM.id == lead_id,
+            LeadORM.organization_id == org_id,
+            or_(LeadORM.workspace_id == workspace_id, LeadORM.workspace_id.is_(None)),
+        )
+        .first()
+    )
     
     if not lead:
         from fastapi import HTTPException

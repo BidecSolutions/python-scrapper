@@ -190,7 +190,14 @@ async def execute_job_background(job_id: int, org_id: int, payload_dict: dict):
         saved_leads = []
         if leads:
             try:
-                saved_leads = upsert_leads(db, leads, job_id=job.id, organization_id=org_id, commit=False)
+                saved_leads = upsert_leads(
+                    db,
+                    leads,
+                    job_id=job.id,
+                    organization_id=org_id,
+                    workspace_id=job.workspace_id,
+                    commit=False,
+                )
             except Exception as save_error:
                 logger.error(f"Error saving leads: {save_error}")
                 import traceback

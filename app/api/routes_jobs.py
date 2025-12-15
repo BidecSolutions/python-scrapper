@@ -1,23 +1,21 @@
 """Job-based API routes with database persistence"""
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+import logging
 from typing import List
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from app.api.schemas import ScrapeRequest, ScrapeResponse, LeadOut, JobResponse
-from app.core.db import get_db, SessionLocal
-from app.core.orm import ScrapeJobORM, JobStatus, OrganizationORM, PlanTier, LeadORM
-from app.scraper.async_crawler import AsyncCrawler
-from app.services.async_lead_service import AsyncLeadService
-from app.services.lead_repo import upsert_leads
-from app.sources.google_places import GooglePlacesSource
-from app.sources.google_search import GoogleSearchSource
-from app.sources.web_search import WebSearchSource
-from app.sources.basic_web_search import BasicWebSearchSource
-# YellowPages disabled per user request
-# from app.sources.yellow_pages import YellowPagesSource
-# For now, we'll create a default org for testing
-# In production, use: from app.api.middleware import get_organization_from_api_key
+
+from app.api.routes_auth import get_current_user
+from app.api.routes_workspaces import get_current_workspace
+from app.api.schemas import ScrapeRequest, LeadOut
+from app.core.db import get_db
+from app.core.orm import JobStatus, LeadORM, ScrapeJobORM, UserORM
+from app.core.orm_workspaces import WorkspaceORM
+from app.workers.job_worker import spawn_job_worker
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _update_job_progress(db: Session, job_id: int, processed: int, total: int):
@@ -43,40 +41,73 @@ def _update_job_progress(db: Session, job_id: int, processed: int, total: int):
             pass
 
 
-def get_or_create_default_org(db: Session) -> int:
-    """Get or create default organization for testing"""
-    try:
-        # Check if default org exists
-        org = db.query(OrganizationORM).filter(OrganizationORM.slug == "default").first()
-        
-        if not org:
-            # Create default org
-            org = OrganizationORM(
-                name="Default Organization",
-                slug="default",
-                plan_tier=PlanTier.pro,
-            )
-            db.add(org)
-            db.flush()  # Flush to get the ID, but don't commit here
-        
-        return org.id
-    except Exception as e:
-        import traceback
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"Error in get_or_create_default_org: {traceback.format_exc()}")
-        raise
+def _require_org_and_workspace(
+    current_user: UserORM,
+    workspace: WorkspaceORM,
+) -> tuple[int, int]:
+    """
+    Ensure the user has an organization and the workspace belongs to it.
+    Returns (organization_id, workspace_id).
+    """
+    if not current_user.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is not associated with an organization.",
+        )
+
+    if workspace.organization_id != current_user.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Workspace does not belong to your organization.",
+        )
+
+    return current_user.organization_id, workspace.id
+
+
+def _get_job_for_workspace(
+    db: Session,
+    job_id: int,
+    org_id: int,
+    workspace_id: int,
+):
+    """Fetch a job ensuring it belongs to the organization/workspace context."""
+    job = (
+        db.query(ScrapeJobORM)
+        .filter(
+            ScrapeJobORM.id == job_id,
+            ScrapeJobORM.organization_id == org_id,
+            or_(
+                ScrapeJobORM.workspace_id == workspace_id,
+                ScrapeJobORM.workspace_id.is_(None),
+            ),
+        )
+        .first()
+    )
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
 
 
 @router.get("/jobs", response_model=List[dict])
 def get_jobs(
     db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
 ) -> List[dict]:
-    """Get all jobs"""
-    org_id = get_or_create_default_org(db)
-    jobs = db.query(ScrapeJobORM).filter(
-        ScrapeJobORM.organization_id == org_id
-    ).order_by(ScrapeJobORM.created_at.desc()).all()
+    """Get all jobs for the current workspace"""
+    org_id, workspace_id = _require_org_and_workspace(current_user, workspace)
+    jobs = (
+        db.query(ScrapeJobORM)
+        .filter(
+            ScrapeJobORM.organization_id == org_id,
+            or_(
+                ScrapeJobORM.workspace_id == workspace_id,
+                ScrapeJobORM.workspace_id.is_(None),
+            ),
+        )
+        .order_by(ScrapeJobORM.created_at.desc())
+        .all()
+    )
     
     return [
         {
@@ -115,17 +146,12 @@ async def trigger_job_ai_insights(
     job_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
 ) -> dict:
     """Trigger AI insights generation for a completed job"""
-    org_id = get_or_create_default_org(db)
-    
-    job = db.query(ScrapeJobORM).filter(
-        ScrapeJobORM.id == job_id,
-        ScrapeJobORM.organization_id == org_id
-    ).first()
-    
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    org_id, workspace_id = _require_org_and_workspace(current_user, workspace)
+    job = _get_job_for_workspace(db, job_id, org_id, workspace_id)
     
     if job.status != JobStatus.completed and job.status != JobStatus.completed_with_warnings:
         raise HTTPException(
@@ -156,16 +182,12 @@ async def trigger_job_ai_insights(
 def get_job(
     job_id: int,
     db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
 ) -> dict:
     """Get a single job by ID"""
-    org_id = get_or_create_default_org(db)
-    job = db.query(ScrapeJobORM).filter(
-        ScrapeJobORM.id == job_id,
-        ScrapeJobORM.organization_id == org_id
-    ).first()
-    
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    org_id, workspace_id = _require_org_and_workspace(current_user, workspace)
+    job = _get_job_for_workspace(db, job_id, org_id, workspace_id)
     
     return {
         "id": job.id,
@@ -200,17 +222,12 @@ async def create_ai_segment_saved_view(
     job_id: int,
     segment_index: int,
     db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
 ) -> dict:
     """Create a Saved View from an AI segment"""
-    org_id = get_or_create_default_org(db)
-    
-    job = db.query(ScrapeJobORM).filter(
-        ScrapeJobORM.id == job_id,
-        ScrapeJobORM.organization_id == org_id
-    ).first()
-    
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    org_id, workspace_id = _require_org_and_workspace(current_user, workspace)
+    job = _get_job_for_workspace(db, job_id, org_id, workspace_id)
     
     if job.ai_status != "ready" or not job.ai_segments:
         raise HTTPException(
@@ -225,7 +242,7 @@ async def create_ai_segment_saved_view(
     segment = segments[segment_index]
     
     # Get workspace_id if available
-    workspace_id = job.workspace_id
+    workspace_id = job.workspace_id or workspace_id
     
     from app.services.ai_segment_actions import create_saved_view_from_ai_segment
     view = create_saved_view_from_ai_segment(
@@ -253,17 +270,12 @@ async def create_ai_segment_playbook(
     job_id: int,
     segment_index: int,
     db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
 ) -> dict:
     """Create a Playbook Blueprint from an AI segment"""
-    org_id = get_or_create_default_org(db)
-    
-    job = db.query(ScrapeJobORM).filter(
-        ScrapeJobORM.id == job_id,
-        ScrapeJobORM.organization_id == org_id
-    ).first()
-    
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    org_id, workspace_id = _require_org_and_workspace(current_user, workspace)
+    job = _get_job_for_workspace(db, job_id, org_id, workspace_id)
     
     if job.ai_status != "ready" or not job.ai_segments:
         raise HTTPException(
@@ -278,7 +290,7 @@ async def create_ai_segment_playbook(
     segment = segments[segment_index]
     
     # Get workspace_id if available
-    workspace_id = job.workspace_id
+    workspace_id = job.workspace_id or workspace_id
     
     from app.services.ai_segment_actions import create_playbook_from_ai_segment
     playbook = create_playbook_from_ai_segment(
@@ -304,17 +316,12 @@ async def create_ai_segment_playbook(
 def get_job_leads(
     job_id: int,
     db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
 ) -> List[LeadOut]:
     """Get leads for a specific job"""
-    org_id = get_or_create_default_org(db)
-    # Verify job belongs to org
-    job = db.query(ScrapeJobORM).filter(
-        ScrapeJobORM.id == job_id,
-        ScrapeJobORM.organization_id == org_id
-    ).first()
-    
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    org_id, workspace_id = _require_org_and_workspace(current_user, workspace)
+    job = _get_job_for_workspace(db, job_id, org_id, workspace_id)
     
     # Get leads
     leads = db.query(LeadORM).filter(LeadORM.job_id == job_id).order_by(LeadORM.quality_score.desc().nulls_last()).all()
@@ -346,26 +353,23 @@ def get_job_leads(
 @router.post("/jobs/run-once", response_model=dict)
 async def run_scrape_job(
     payload: ScrapeRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
 ) -> dict:
     """Create a scrape job and run it in the background - returns immediately"""
-    import logging
     from datetime import datetime, timezone
-    from app.api.background_job_executor import run_job_in_background
-    logger = logging.getLogger(__name__)
     
     job = None
     try:
-        # Get or create organization
-        org_id = get_or_create_default_org(db)
-        db.commit()  # Commit org creation separately
-        logger.info(f"Using organization ID: {org_id}")
+        org_id, workspace_id = _require_org_and_workspace(current_user, workspace)
         
         # Create job with "pending" status (will change to "running" when background task starts)
         extract_config_dict = payload.extract.dict() if payload.extract else {}
         job = ScrapeJobORM(
             organization_id=org_id,
+            workspace_id=workspace_id,
+            created_by_user_id=current_user.id,
             niche=payload.niche,
             location=payload.location,
             max_results=payload.max_results,
@@ -388,13 +392,21 @@ async def run_scrape_job(
             "extract": extract_config_dict,
         }
         
-        # Schedule background execution
-        background_tasks.add_task(run_job_in_background, job.id, org_id, payload_dict)
-        
-        # Commit job creation
+        # Commit before spawning the worker so it's visible
         db.commit()
         
-        logger.info(f"Job {job.id} scheduled for background execution, returning immediately")
+        # Spawn worker process outside the request thread
+        try:
+            spawn_job_worker(job.id, org_id, payload_dict)
+        except Exception as worker_error:
+            logger.error(f"Failed to spawn worker for job {job.id}: {worker_error}", exc_info=True)
+            job.status = JobStatus.failed
+            job.error_message = "Unable to start worker process"
+            db.commit()
+            raise HTTPException(
+                status_code=500,
+                detail="Unable to start worker process for this job. Please try again.",
+            )
         
         # Return job immediately (scraping will happen in background)
         return {

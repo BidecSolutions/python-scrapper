@@ -70,7 +70,13 @@ async def scrape_job_task(job_id: int, enable_ai: bool = True):
             )
             
             # Save leads to database
-            saved_leads = await upsert_leads(db, leads, job_id=job.id)
+            saved_leads = await upsert_leads(
+                db,
+                leads,
+                job_id=job.id,
+                organization_id=job.organization_id,
+                workspace_id=job.workspace_id,
+            )
             
             # Save website text snapshots for AI processing
             if enable_ai and saved_leads:
