@@ -80,9 +80,9 @@ def recompute_scores_batch(
     if request.lead_ids:
         query = query.filter(LeadORM.id.in_(request.lead_ids))
     
-    leads = query.all()
+    lead_ids = [row[0] for row in query.with_entities(LeadORM.id).all()]
     
-    if not leads:
+    if not lead_ids:
         return RecomputeScoresResponse(
             message="No leads found to process",
             leads_processed=0
@@ -94,13 +94,16 @@ def recompute_scores_batch(
         db_local = SessionLocal()
         try:
             processed = 0
-            for lead in leads:
+            for lead_id in lead_ids:
                 try:
+                    lead = db_local.query(LeadORM).filter(LeadORM.id == lead_id).first()
+                    if not lead:
+                        continue
                     recompute_lead_score(db_local, lead)
                     recompute_next_action_for_lead(db_local, lead)
                     processed += 1
                 except Exception as e:
-                    logger.error(f"Error processing lead {lead.id}: {e}", exc_info=True)
+                    logger.error(f"Error processing lead {lead_id}: {e}", exc_info=True)
             logger.info(f"Processed {processed} leads for score recomputation")
         finally:
             db_local.close()
@@ -108,7 +111,7 @@ def recompute_scores_batch(
     background_tasks.add_task(process_scores)
     
     return RecomputeScoresResponse(
-        message=f"Score recomputation started for {len(leads)} leads",
-        leads_processed=len(leads)
+        message=f"Score recomputation started for {len(lead_ids)} leads",
+        leads_processed=len(lead_ids)
     )
 

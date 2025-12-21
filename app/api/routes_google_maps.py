@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 
 from app.core.db import get_db
 from app.services.google_maps_scraper import GoogleMapsScraper
+from app.sources.google_places import GooglePlacesSource
+from app.core.config import settings
 from app.api.routes_workspaces import get_current_user_optional, get_current_workspace_optional
 from app.core.orm import UserORM
 from app.core.orm_workspaces import WorkspaceORM
@@ -20,8 +22,10 @@ class GoogleMapsSearchRequest(BaseModel):
     query: str = Field(..., description="Search query (e.g., 'orthopedic doctor', 'find doctor')")
     location: Optional[str] = Field(None, description="Location (e.g., 'New York', 'New York, NY')")
     max_results: int = Field(20, ge=1, le=100, description="Maximum number of results to return")
-    headless: bool = Field(True, description="Run browser in headless mode")
+    headless: bool = Field(False, description="Run browser in headless mode")
     extract_emails: bool = Field(True, description="Extract emails from business websites")
+    use_places_api: bool = Field(False, description="Use Google Places API instead of scraping (requires API key)")
+    aggressive_scroll: bool = Field(True, description="Retry scrolling to collect more results")
 
 
 class BusinessInfo(BaseModel):
@@ -34,6 +38,7 @@ class BusinessInfo(BaseModel):
     rating: Optional[float] = None
     reviews: Optional[int] = None
     category: Optional[str] = None
+    open_status: Optional[str] = None
 
 
 class GoogleMapsSearchResponse(BaseModel):
@@ -81,12 +86,42 @@ def search_google_maps(
         scraper = GoogleMapsScraper(headless=request.headless, use_stealth=True)
         
         try:
-            # Perform search
+            # Perform search via scraper
             results = scraper.search_places(
                 query=request.query,
                 location=request.location,
-                max_results=request.max_results
+                max_results=request.max_results,
+                aggressive_scroll=request.aggressive_scroll,
             )
+
+            # Optional fallback to Places API when scraping is thin
+            should_use_places_api = request.use_places_api or (
+                len(results) < request.max_results and settings.GOOGLE_PLACES_API_KEY
+            )
+            if should_use_places_api:
+                try:
+                    places_source = GooglePlacesSource(settings.GOOGLE_PLACES_API_KEY)
+                    seen = {(r.get("name"), r.get("address")) for r in results}
+                    for lead in places_source.search(request.query, request.location):
+                        key = (lead.name, lead.address)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        results.append({
+                            "name": lead.name,
+                            "address": lead.address,
+                            "phone": None,
+                            "email": None,
+                            "website": lead.website,
+                            "rating": None,
+                            "reviews": None,
+                            "category": None,
+                        })
+                        if len(results) >= request.max_results:
+                            break
+                    logger.info("Places API fallback added %s results", len(results))
+                except Exception as e:
+                    logger.warning("Places API fallback failed: %s", e)
             
             # Extract emails from websites if requested
             if request.extract_emails:
@@ -100,6 +135,8 @@ def search_google_maps(
                                 logger.info(f"Found email for {result.get('name')}: {email}")
                         except Exception as e:
                             logger.warning(f"Error extracting email from {result.get('website')}: {e}")
+                        finally:
+                            scraper._cooldown(1.5)
             
             # Convert to response models
             business_results = [
@@ -111,7 +148,8 @@ def search_google_maps(
                     website=result.get("website"),
                     rating=result.get("rating"),
                     reviews=result.get("reviews"),
-                    category=result.get("category")
+                    category=result.get("category"),
+                    open_status=result.get("open_status")
                 )
                 for result in results
             ]

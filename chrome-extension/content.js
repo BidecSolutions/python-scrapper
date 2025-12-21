@@ -137,6 +137,20 @@
     return domain ? `${domain}.com` : null;
   }
 
+  function parseTags(input) {
+    if (!input) return [];
+    return input
+      .split(',')
+      .map(tag => tag.trim())
+      .filter(tag => tag.length > 0);
+  }
+
+  function sleepWithJitter(baseMs, jitter = 0.3) {
+    const spread = baseMs * jitter;
+    const delay = Math.max(100, baseMs + (Math.random() * 2 - 1) * spread);
+    return new Promise(resolve => setTimeout(resolve, delay));
+  }
+
   // Call LeadFlux API to find email
   async function findEmail(firstName, lastName, domain) {
     try {
@@ -199,7 +213,7 @@
     if (saveBtn) {
       saveBtn.addEventListener('click', async () => {
         // Use new LinkedIn capture endpoint with widget
-        await saveLinkedInProfile(true, false, true);
+        await saveLinkedInProfile({ autoFindEmail: true, skipSmtp: false, showWidget: true });
       });
     }
   }
@@ -245,7 +259,14 @@
   }
 
   // Save LinkedIn profile to leads (new unified endpoint)
-  async function saveLinkedInProfile(autoFindEmail = true, skipSmtp = false, showWidget = true) {
+  async function saveLinkedInProfile(options = {}) {
+    const {
+      autoFindEmail = true,
+      skipSmtp = false,
+      showWidget = true,
+      listId = null,
+      tags = []
+    } = options;
     // Check if API key is configured
     const storage = await new Promise((resolve) => {
       if (!isExtensionContextValid()) {
@@ -309,6 +330,8 @@
           company_domain: companyToDomain(company),
           auto_find_email: autoFindEmail,
           skip_smtp: skipSmtp,
+          list_id: listId || undefined,
+          tags: Array.isArray(tags) && tags.length > 0 ? tags : undefined,
         }),
       });
 
@@ -371,7 +394,7 @@
   // Legacy function for backward compatibility (saves found email)
   async function saveToLeads(result) {
     // Use the new LinkedIn capture endpoint instead
-    return saveLinkedInProfile(true, false);
+    return saveLinkedInProfile({ autoFindEmail: true, skipSmtp: false });
   }
 
   // Show notification (helper function)
@@ -474,6 +497,47 @@
       }
       #${WIDGET_ID} button:hover {
         background: #0284c7;
+      }
+      #${WIDGET_ID} .leadflux-input {
+        width: 100%;
+        padding: 6px 8px;
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 6px;
+        color: #e2e8f0;
+        font-size: 12px;
+      }
+      #${WIDGET_ID} .leadflux-toggle {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: #cbd5f5;
+      }
+      #${WIDGET_ID} .leadflux-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+        border: 1px solid transparent;
+      }
+      #${WIDGET_ID} .leadflux-badge.valid {
+        background: rgba(16, 185, 129, 0.15);
+        border-color: rgba(16, 185, 129, 0.4);
+        color: #34d399;
+      }
+      #${WIDGET_ID} .leadflux-badge.risky {
+        background: rgba(249, 115, 22, 0.15);
+        border-color: rgba(249, 115, 22, 0.4);
+        color: #fb923c;
+      }
+      #${WIDGET_ID} .leadflux-badge.unknown {
+        background: rgba(148, 163, 184, 0.2);
+        border-color: rgba(148, 163, 184, 0.5);
+        color: #94a3b8;
       }
       #${WIDGET_ID} .leadflux-row {
         display: flex;
@@ -609,7 +673,7 @@
       const retryBtn = document.getElementById("leadflux-retry-btn");
       if (retryBtn) {
         retryBtn.addEventListener("click", async () => {
-          await saveLinkedInProfile(true, false, true);
+          await saveLinkedInProfile({ autoFindEmail: true, skipSmtp: false, showWidget: true });
         });
       }
       return;
@@ -619,8 +683,9 @@
     const emailStatus = lead.email_status;
     const hasEmail = emailStatus && emailStatus.email;
 
+    const confidencePercent = hasEmail ? Math.round((emailStatus.confidence || 0) * 100) : null;
     const statusText = hasEmail
-      ? `${emailStatus.status === 'valid' ? '✅' : emailStatus.status === 'risky' ? '⚠️' : '❓'} ${emailStatus.status || ""} (${Math.round((emailStatus.confidence || 0) * 100)}%)`
+      ? `${emailStatus.status === 'valid' ? '✅' : emailStatus.status === 'risky' ? '⚠️' : '❓'} ${emailStatus.status || ""} (${confidencePercent}%)`
       : "⏳ Finding & verifying email…";
 
     const statusClass = hasEmail
@@ -662,6 +727,8 @@
       }
     });
 
+    const badgeClass = hasEmail ? (emailStatus.status || 'unknown') : 'unknown';
+
     wrapper.innerHTML = `
       <div class="leadflux-row">
         <h4>LeadFlux – ${hasEmail ? "Email found" : "Lead saved"}</h4>
@@ -674,14 +741,26 @@
       <div class="${statusClass}">
         ${statusText}
       </div>
+      <div style="margin: 6px 0;">
+        <span class="leadflux-badge ${badgeClass}">
+          ${hasEmail ? `Confidence ${confidencePercent}%` : "Verifying..."}
+        </span>
+      </div>
       <div style="margin: 8px 0;">
         <select id="leadflux-list-select" style="width: 100%; padding: 6px; background: #1e293b; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0; font-size: 12px;">
           ${listsHtml}
         </select>
       </div>
+      <div style="margin: 8px 0;">
+        <input id="leadflux-tags-input" class="leadflux-input" placeholder="Tags (comma separated)" />
+      </div>
+      <label class="leadflux-toggle" style="margin-bottom: 6px;">
+        <input type="checkbox" id="leadflux-auto-verify" checked />
+        <span>Auto-verify email (SMTP)</span>
+      </label>
       <div class="leadflux-usage-container"></div>
       <div class="leadflux-row" style="gap: 4px;">
-        <button type="button" id="leadflux-save-list-btn" style="flex: 1;">Save to List</button>
+        <button type="button" id="leadflux-save-list-btn" style="flex: 1;">Save Lead</button>
         <button type="button" id="leadflux-open-btn" style="flex: 1;">Open in LeadFlux</button>
       </div>
     `;
@@ -724,62 +803,38 @@
       originalRemove();
     };
 
-    // Save to list button
+    // Save lead button
     const saveListBtn = document.getElementById("leadflux-save-list-btn");
     if (saveListBtn) {
       saveListBtn.addEventListener("click", async () => {
         const select = document.getElementById("leadflux-list-select");
         const listId = select ? parseInt(select.value) : null;
+        const tagsInput = document.getElementById("leadflux-tags-input");
+        const autoVerify = document.getElementById("leadflux-auto-verify");
+        const tags = tagsInput ? parseTags(tagsInput.value) : [];
         
-        if (!listId) {
-          showNotification('Please select a list', 'info');
-          return;
-        }
-
         saveListBtn.disabled = true;
         saveListBtn.textContent = 'Saving...';
         
         try {
-          // Re-save with list_id
-          const apiUrl = await getApiUrl();
-          const name = extractName();
-          const company = extractCompany();
-          const headline = extractHeadline();
-          
-          const response = await fetch(`${apiUrl}/api/leads/linkedin-capture`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              full_name: name.full,
-              first_name: name.first,
-              last_name: name.last,
-              headline: headline,
-              title: headline,
-              company_name: company,
-              linkedin_url: window.location.href,
-              company_domain: companyToDomain(company),
-              auto_find_email: false, // Already found
-              list_id: listId,
-            }),
+          await saveLinkedInProfile({
+            autoFindEmail: !!(autoVerify && autoVerify.checked),
+            skipSmtp: !(autoVerify && autoVerify.checked),
+            showWidget: false,
+            listId: listId || null,
+            tags,
           });
-
-          if (response.ok) {
-            showNotification('Saved to list!', 'success');
-            saveListBtn.textContent = 'Saved ✓';
-            setTimeout(() => {
-              saveListBtn.disabled = false;
-              saveListBtn.textContent = 'Save to List';
-            }, 2000);
-          } else {
-            throw new Error('Failed to save to list');
-          }
+          showNotification('Saved lead!', 'success');
+          saveListBtn.textContent = 'Saved ✓';
+          setTimeout(() => {
+            saveListBtn.disabled = false;
+            saveListBtn.textContent = 'Save Lead';
+          }, 2000);
         } catch (error) {
           console.error('Error saving to list:', error);
-          showNotification('Failed to save to list', 'error');
+          showNotification('Failed to save lead', 'error');
           saveListBtn.disabled = false;
-          saveListBtn.textContent = 'Save to List';
+          saveListBtn.textContent = 'Save Lead';
         }
       });
     }
@@ -911,7 +966,7 @@
         btn.disabled = true;
         btn.textContent = 'Saving...';
         try {
-          await saveLinkedInProfile(true, false, true);
+          await saveLinkedInProfile({ autoFindEmail: true, skipSmtp: false, showWidget: true });
         } catch (error) {
           console.error('Error saving lead:', error);
         } finally {
@@ -987,7 +1042,7 @@
         
         try {
           // Save and show widget
-          await saveLinkedInProfile(true, false, true);
+          await saveLinkedInProfile({ autoFindEmail: true, skipSmtp: false, showWidget: true });
         } catch (error) {
           console.error('Error saving lead:', error);
         } finally {
@@ -1365,8 +1420,25 @@
             <span>Use Playwright (Browser Automation) - More reliable for JS-heavy pages</span>
           </label>
         </div>
+        <div class="leadflux-batch-options" style="margin-bottom: 10px;">
+          <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+            <input id="leadflux-batch-tags" class="leadflux-input" placeholder="Tags (comma separated)" style="flex: 1;" />
+            <select id="leadflux-batch-list" class="leadflux-input" style="flex: 1;">
+              <option value="">No list</option>
+            </select>
+          </div>
+          <div style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
+            <label style="font-size: 12px; color: #cbd5f5; flex: 1;">Delay per profile (ms)</label>
+            <input id="leadflux-delay-ms" class="leadflux-input" type="number" min="300" max="5000" value="1200" style="width: 120px;" />
+          </div>
+          <label class="leadflux-checkbox-label" style="margin-bottom: 4px;">
+            <input type="checkbox" id="leadflux-batch-auto-verify" class="leadflux-field-checkbox" checked>
+            <span>Auto-verify emails for captured leads</span>
+          </label>
+        </div>
         <div class="leadflux-actions">
           <button id="leadflux-scrape-btn" class="leadflux-primary-btn">Scrape Selected Profiles</button>
+          <button id="leadflux-quick-capture-btn" class="leadflux-primary-btn" style="margin-top: 8px; background: #0ea5e9;">Quick Capture Selected</button>
           <div style="display: flex; gap: 8px;">
             <button id="leadflux-select-all-btn" class="leadflux-secondary-btn" style="flex: 1;">Show Profiles</button>
             <button id="leadflux-clear-btn" class="leadflux-secondary-btn" style="flex: 1;">Clear</button>
@@ -1390,6 +1462,9 @@
             <div class="leadflux-progress-fill" id="leadflux-progress-fill"></div>
           </div>
           <div class="leadflux-progress-text" id="leadflux-progress-text">Scraping...</div>
+          <div style="margin-top: 8px; text-align: right;">
+            <button id="leadflux-cancel-btn" class="leadflux-small-btn" style="display: none;">Stop</button>
+          </div>
         </div>
       </div>
     `;
@@ -1419,6 +1494,7 @@
   // Scrape profiles with selected fields
   let scrapedProfiles = [];
   let selectedProfileCards = [];
+  let cancelRequested = false;
 
   async function scrapeProfiles(container, profiles) {
     const selectedFields = getSelectedFields(container);
@@ -1454,15 +1530,24 @@
     const resultsContainer = container.querySelector('#leadflux-results-container');
     const resultsList = container.querySelector('#leadflux-results-list');
     const scrapeBtn = container.querySelector('#leadflux-scrape-btn');
+    const cancelBtn = container.querySelector('#leadflux-cancel-btn');
+    const delayInput = container.querySelector('#leadflux-delay-ms');
+    const requestDelayMs = Math.min(5000, Math.max(300, parseInt(delayInput?.value || '1200')));
 
     // Show progress and hide previous results
     progressDiv.style.display = 'block';
+    if (cancelBtn) {
+      cancelBtn.style.display = 'inline-block';
+      cancelBtn.disabled = false;
+      cancelBtn.textContent = 'Stop';
+    }
     if (resultsContainer) {
       resultsContainer.style.display = 'none';
     }
     scrapeBtn.disabled = true;
     scrapeBtn.textContent = 'Scraping...';
     scrapedProfiles = [];
+    cancelRequested = false;
 
     const apiUrl = await getApiUrl();
     let successCount = 0;
@@ -1474,10 +1559,14 @@
       
       // Scrape profiles using Playwright endpoint
       for (let i = 0; i < validProfiles.length; i++) {
+        if (cancelRequested) {
+          progressText.textContent = `Stopped after ${i}/${validProfiles.length}.`;
+          break;
+        }
         const profile = validProfiles[i];
         const progress = ((i + 1) / validProfiles.length) * 100;
         progressFill.style.width = `${progress}%`;
-        progressText.textContent = `Scraping ${i + 1}/${validProfiles.length} with Playwright: ${profile.full_name || profile.linkedin_url}`;
+        progressText.textContent = `Scraping ${i + 1}/${validProfiles.length} with Playwright (ok ${successCount}, err ${errorCount}): ${profile.full_name || profile.linkedin_url}`;
 
         try {
           const scrapeRequest = {
@@ -1550,16 +1639,20 @@
 
         // Delay between requests to avoid rate limiting
         if (i < validProfiles.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await sleepWithJitter(requestDelayMs + 600);
         }
       }
     } else {
       // Use traditional DOM scraping method
       for (let i = 0; i < validProfiles.length; i++) {
+        if (cancelRequested) {
+          progressText.textContent = `Stopped after ${i}/${validProfiles.length}.`;
+          break;
+        }
         const profile = validProfiles[i];
         const progress = ((i + 1) / validProfiles.length) * 100;
         progressFill.style.width = `${progress}%`;
-        progressText.textContent = `Scraping ${i + 1}/${validProfiles.length}: ${profile.full_name}`;
+        progressText.textContent = `Scraping ${i + 1}/${validProfiles.length} (ok ${successCount}, err ${errorCount}): ${profile.full_name}`;
 
         try {
           const profileData = {
@@ -1611,12 +1704,15 @@
         }
 
         // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await sleepWithJitter(requestDelayMs);
       }
     }
 
     // Hide progress, show results
     progressDiv.style.display = 'none';
+    if (cancelBtn) {
+      cancelBtn.style.display = 'none';
+    }
     scrapeBtn.disabled = false;
     scrapeBtn.textContent = 'Scrape Selected Profiles';
 
@@ -1657,6 +1753,129 @@
                      successCount > 0 ? 'success' : 'error');
   }
 
+  async function quickCaptureProfiles(container, profiles) {
+    const validProfiles = profiles.filter(profile => {
+      if (!profile.linkedin_url) return false;
+      const validUrl = validateProfileUrl(profile.linkedin_url);
+      if (!validUrl) return false;
+      profile.linkedin_url = validUrl;
+      return true;
+    });
+
+    if (validProfiles.length === 0) {
+      showNotification('No valid profiles selected.', 'error');
+      return;
+    }
+
+    const listSelect = container.querySelector('#leadflux-batch-list');
+    const tagsInput = container.querySelector('#leadflux-batch-tags');
+    const autoVerifyToggle = container.querySelector('#leadflux-batch-auto-verify');
+    const listId = listSelect ? parseInt(listSelect.value) : null;
+    const tags = tagsInput ? parseTags(tagsInput.value) : [];
+    const autoVerify = autoVerifyToggle ? autoVerifyToggle.checked : true;
+
+    const progressDiv = container.querySelector('#leadflux-progress');
+    const progressFill = container.querySelector('#leadflux-progress-fill');
+    const progressText = container.querySelector('#leadflux-progress-text');
+    const resultsContainer = container.querySelector('#leadflux-results-container');
+    const resultsList = container.querySelector('#leadflux-results-list');
+    const quickBtn = container.querySelector('#leadflux-quick-capture-btn');
+    const cancelBtn = container.querySelector('#leadflux-cancel-btn');
+    const delayInput = container.querySelector('#leadflux-delay-ms');
+    const requestDelayMs = Math.min(5000, Math.max(300, parseInt(delayInput?.value || '1200')));
+
+    progressDiv.style.display = 'block';
+    if (cancelBtn) {
+      cancelBtn.style.display = 'inline-block';
+      cancelBtn.disabled = false;
+      cancelBtn.textContent = 'Stop';
+    }
+    if (resultsContainer) {
+      resultsContainer.style.display = 'none';
+    }
+    quickBtn.disabled = true;
+    quickBtn.textContent = 'Capturing...';
+    scrapedProfiles = [];
+    cancelRequested = false;
+
+    const apiUrl = await getApiUrl();
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (let i = 0; i < validProfiles.length; i++) {
+      if (cancelRequested) {
+        progressText.textContent = `Stopped after ${i}/${validProfiles.length}.`;
+        break;
+      }
+      const profile = validProfiles[i];
+      const progress = ((i + 1) / validProfiles.length) * 100;
+      progressFill.style.width = `${progress}%`;
+      progressText.textContent = `Capturing ${i + 1}/${validProfiles.length} (ok ${successCount}, err ${errorCount}): ${profile.full_name || profile.linkedin_url}`;
+
+      try {
+        const response = await fetch(`${apiUrl}/api/leads/linkedin-capture`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            full_name: profile.full_name || 'Unknown',
+            first_name: profile.first_name || '',
+            last_name: profile.last_name || '',
+            headline: profile.headline || '',
+            title: profile.headline || '',
+            company_name: profile.company_name || '',
+            linkedin_url: profile.linkedin_url,
+            company_domain: profile.company_name ? companyToDomain(profile.company_name) : null,
+            auto_find_email: autoVerify,
+            skip_smtp: !autoVerify,
+            list_id: listId || undefined,
+            tags: tags.length > 0 ? tags : undefined,
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          scrapedProfiles.push({
+            ...profile,
+            ...result,
+            scraped_fields: ['name', 'headline', 'company', 'linkedin_url', 'email'],
+            success: true
+          });
+          successCount++;
+        } else {
+          scrapedProfiles.push({
+            ...profile,
+            error: `API error: ${response.status}`,
+            success: false
+          });
+          errorCount++;
+        }
+      } catch (error) {
+        scrapedProfiles.push({
+          ...profile,
+          error: error.message,
+          success: false
+        });
+        errorCount++;
+      }
+
+      await sleepWithJitter(requestDelayMs);
+    }
+
+    progressDiv.style.display = 'none';
+    if (cancelBtn) {
+      cancelBtn.style.display = 'none';
+    }
+    quickBtn.disabled = false;
+    quickBtn.textContent = 'Quick Capture Selected';
+
+    displayResults(resultsList, scrapedProfiles, ['name', 'headline', 'company', 'linkedin_url', 'email']);
+    resultsContainer.style.display = 'block';
+    const scrollBtn = container.querySelector('#leadflux-scroll-to-results');
+    if (scrollBtn) scrollBtn.style.display = 'inline-block';
+
+    showNotification(`Captured ${successCount} profiles, ${errorCount} errors.`, successCount > 0 ? 'success' : 'error');
+  }
+
   // Display scraped results
   function displayResults(container, profiles, fields) {
     console.log('Displaying results:', profiles.length, 'profiles');
@@ -1685,7 +1904,10 @@
         else if (field === 'linkedin_url') value = profile.linkedin_url || '';
         else if (field === 'email') {
           if (profile.email_status && profile.email_status.email) {
-            value = `${profile.email_status.email} (${profile.email_status.status || 'unknown'})`;
+            const confidence = profile.email_status.confidence !== null && profile.email_status.confidence !== undefined
+              ? Math.round(profile.email_status.confidence * 100)
+              : null;
+            value = `${profile.email_status.email} (${profile.email_status.status || 'unknown'}${confidence !== null ? ` • ${confidence}%` : ''})`;
           } else {
             value = 'Not found';
           }
@@ -1913,6 +2135,16 @@
     document.body.appendChild(panel);
 
     initFieldCheckboxes(panel);
+
+    fetchLists().then(lists => {
+      const listSelect = panel.querySelector('#leadflux-batch-list');
+      if (!listSelect) return;
+      if (lists && lists.length > 0) {
+        listSelect.innerHTML = '<option value="">No list</option>' + lists.map(list =>
+          `<option value="${list.id}">${list.name} (${list.total_leads || 0})</option>`
+        ).join('');
+      }
+    });
 
     // Function to update profile count and refresh cards (ONLY for search pages)
     function updateProfileCount() {
@@ -2166,6 +2398,15 @@
       }
     });
 
+    const cancelBtn = panel.querySelector('#leadflux-cancel-btn');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => {
+        cancelRequested = true;
+        cancelBtn.disabled = true;
+        cancelBtn.textContent = 'Stopping...';
+      });
+    }
+
     // Show profiles button (renamed from Select All)
     panel.querySelector('#leadflux-select-all-btn').addEventListener('click', () => {
       console.log('🔍 Show Profiles button clicked');
@@ -2276,6 +2517,59 @@
       showNotification(`Found ${allCards.length} profiles`, allCards.length > 0 ? 'success' : 'info');
     });
 
+    function resolveSelectedProfiles(panel) {
+      let profiles = [];
+      if (isIndividualProfilePage()) {
+        const name = extractName();
+        const headline = extractHeadline();
+        const company = extractCompany();
+        const location = extractLocation();
+
+        if (name && name.full) {
+          let currentUrl = window.location.href;
+          if (currentUrl.includes('?')) currentUrl = currentUrl.split('?')[0];
+          if (currentUrl.includes('/overlay/')) {
+            const match = currentUrl.match(/(https?:\/\/[^\/]+\/in\/[^\/]+)/);
+            if (match) currentUrl = match[1];
+          }
+          const validUrl = validateProfileUrl(currentUrl);
+          if (validUrl) {
+            profiles = [{
+              full_name: name.full,
+              first_name: name.first,
+              last_name: name.last,
+              headline: headline || '',
+              company_name: company || '',
+              location: location || '',
+              linkedin_url: validUrl
+            }];
+          }
+        }
+      } else {
+        allCards = getAllProfileCards();
+        profiles = allCards.map(card => extractProfileFromCard(card))
+          .filter(p => p && p.full_name && p.linkedin_url)
+          .map(p => {
+            const validUrl = validateProfileUrl(p.linkedin_url);
+            if (validUrl) {
+              p.linkedin_url = validUrl;
+              return p;
+            }
+            return null;
+          })
+          .filter(p => p !== null);
+      }
+
+      const checkedBoxes = panel.querySelectorAll('.leadflux-profile-checkbox:checked');
+      if (checkedBoxes.length > 0) {
+        return Array.from(checkedBoxes).map(cb => {
+          const index = parseInt(cb.dataset.index);
+          return profiles[index];
+        }).filter(p => p && p.linkedin_url);
+      }
+      return profiles;
+    }
+
     // Scrape button
     const scrapeBtn = panel.querySelector('#leadflux-scrape-btn');
     if (!scrapeBtn) {
@@ -2374,6 +2668,21 @@
         showNotification(`Error: ${error.message}`, 'error');
       }
     });
+
+    const quickCaptureBtn = panel.querySelector('#leadflux-quick-capture-btn');
+    if (quickCaptureBtn) {
+      quickCaptureBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const selectedProfiles = resolveSelectedProfiles(panel);
+        if (!selectedProfiles || selectedProfiles.length === 0) {
+          showNotification('No profiles found. Select profiles first.', 'error');
+          return;
+        }
+        showNotification(`Capturing ${selectedProfiles.length} profiles...`, 'info');
+        await quickCaptureProfiles(panel, selectedProfiles);
+      });
+    }
 
     // Scroll to results button
     const scrollToResultsBtn = panel.querySelector('#leadflux-scroll-to-results');

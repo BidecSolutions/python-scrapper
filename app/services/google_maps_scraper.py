@@ -11,7 +11,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException, StaleElementReferenceException
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, quote
 
@@ -56,6 +56,8 @@ class GoogleMapsScraper:
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-dev-shm-usage")
             chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+            chrome_options.add_argument("--lang=en-US")
+            chrome_options.add_argument("--window-size=1920,1080")
             
             # Anti-detection features
             if self.use_stealth:
@@ -111,10 +113,59 @@ class GoogleMapsScraper:
                 raise ValueError(f"Chrome driver not available: {e}")
         
         return self.driver
+
+    def _handle_consent(self, driver):
+        """Handle consent screens that block results list"""
+        try:
+            if "consent.google.com" in driver.current_url:
+                pass
+        except Exception:
+            return
+
+        consent_selectors = [
+            ("button", "Accept all"),
+            ("button", "I agree"),
+            ("button", "Accept"),
+            ("button", "Agree"),
+        ]
+        for tag, text in consent_selectors:
+            try:
+                buttons = driver.find_elements(By.XPATH, f"//{tag}[contains(., '{text}')]")
+                for button in buttons:
+                    if button.is_displayed():
+                        button.click()
+                        self._human_like_delay(1.5, 2.5)
+                        return
+            except Exception:
+                continue
     
     def _human_like_delay(self, min_seconds: float = 0.5, max_seconds: float = 2.0):
         """Add human-like random delay"""
         time.sleep(random.uniform(min_seconds, max_seconds))
+
+    def _cooldown(self, base_seconds: float, jitter: float = 0.4):
+        """Add a longer, jittered pause to reduce bursty behavior."""
+        spread = base_seconds * jitter
+        time.sleep(random.uniform(max(0.1, base_seconds - spread), base_seconds + spread))
+
+    def _is_blocked_page(self, driver) -> bool:
+        """Detect obvious block/interstitial pages and stop gracefully."""
+        try:
+            url = (driver.current_url or "").lower()
+            if "/sorry/" in url or "consent.google.com" in url:
+                return False
+            page_text = driver.page_source.lower()
+        except Exception:
+            return False
+        block_markers = [
+            "unusual traffic",
+            "our systems have detected",
+            "sorry",
+            "robot",
+            "recaptcha",
+            "verify you are a human",
+        ]
+        return any(marker in page_text for marker in block_markers)
     
     def _scroll_page(self, element=None, scroll_amount: int = 400):
         """Scroll the page like a human would"""
@@ -129,7 +180,8 @@ class GoogleMapsScraper:
         self,
         query: str,
         location: Optional[str] = None,
-        max_results: int = 20
+        max_results: int = 20,
+        aggressive_scroll: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Search Google Maps for places and extract business information
@@ -163,13 +215,17 @@ class GoogleMapsScraper:
             
             logger.info(f"Searching Google Maps for: {search_query}")
             
-            # Navigate to Google Maps
-            driver.get(self.GOOGLE_MAPS_URL)
+            # Navigate directly to search results to avoid single-place landing
+            search_url = f"{self.GOOGLE_MAPS_URL}/search/{quote(search_query)}?hl=en&gl=pk"
+            driver.get(search_url)
             self._human_like_delay(2, 4)
+            self._handle_consent(driver)
+            if self._is_blocked_page(driver):
+                logger.warning("Google Maps returned a block/interstitial page. Stopping early.")
+                return results
             
-            # Find and interact with search box
+            # If direct search did not load, fallback to search box
             try:
-                # Try different selectors for the search box
                 search_selectors = [
                     "input#searchboxinput",
                     "input[aria-label='Search Google Maps']",
@@ -177,36 +233,29 @@ class GoogleMapsScraper:
                     "input[name='q']",
                     "#searchboxinput"
                 ]
-                
+
                 search_box = None
                 for selector in search_selectors:
                     try:
-                        search_box = WebDriverWait(driver, 5).until(
+                        search_box = WebDriverWait(driver, 4).until(
                             EC.presence_of_element_located((By.CSS_SELECTOR, selector))
                         )
-                        break
+                        if search_box:
+                            break
                     except TimeoutException:
                         continue
-                
-                if not search_box:
-                    raise ValueError("Could not find Google Maps search box")
-                
-                # Clear and type search query with human-like typing
-                search_box.clear()
-                for char in search_query:
-                    search_box.send_keys(char)
-                    if random.random() > 0.7:  # Occasional pause
-                        time.sleep(random.uniform(0.1, 0.3))
-                
-                self._human_like_delay(0.5, 1.0)
-                
-                # Submit search
-                search_box.send_keys(Keys.ENTER)
-                self._human_like_delay(3, 5)  # Wait for results to load
-                
+
+                if search_box:
+                    search_box.clear()
+                    for char in search_query:
+                        search_box.send_keys(char)
+                        if random.random() > 0.7:
+                            time.sleep(random.uniform(0.1, 0.3))
+                    self._human_like_delay(0.5, 1.0)
+                    search_box.send_keys(Keys.ENTER)
+                    self._human_like_delay(3, 5)
             except Exception as e:
-                logger.error(f"Error interacting with search box: {e}")
-                raise ValueError(f"Failed to perform search: {e}")
+                logger.debug(f"Search box fallback skipped: {e}")
             
             # Wait for results panel to appear
             try:
@@ -219,134 +268,166 @@ class GoogleMapsScraper:
                 logger.warning("Results panel did not appear - page might have loaded differently")
             
             # Wait for results to load
-            self._human_like_delay(3, 5)
+            self._human_like_delay(3.5, 6.0)
             
-            # Extract results by clicking on each result link to open details panel
+            # Collect place links from the results feed first to avoid list collapse
             extracted_names = set()
-            scroll_attempts = 0
-            max_scroll_attempts = 15
-            
-            while len(results) < max_results and scroll_attempts < max_scroll_attempts:
-                # Wait for results to load
-                self._human_like_delay(2, 3)
-                
-                # Find clickable result links using Selenium
-                try:
-                    # Get all result links from the sidebar
-                    result_links = driver.find_elements(By.CSS_SELECTOR, "a[href*='/maps/place/']")
-                    
-                    # Filter to only get links from the results list (not the map)
-                    valid_links = []
-                    for link in result_links:
-                        try:
-                            # Check if link is visible and in results panel
-                            if link.is_displayed():
-                                href = link.get_attribute('href')
-                                if href and '/maps/place/' in href:
-                                    # Extract place name from link or nearby text
-                                    parent = link.find_element(By.XPATH, "./..")
-                                    text = parent.text.strip() if parent else ""
-                                    
-                                    # Skip if it's clearly a UI element
-                                    if not self._is_valid_business_name(text.split('\n')[0] if text else ""):
-                                        continue
-                                    
-                                    valid_links.append(link)
-                        except Exception:
-                            continue
-                    
-                    logger.info(f"Found {len(valid_links)} valid result links")
-                    
-                    found_new = False
-                    for link in valid_links:
-                        if len(results) >= max_results:
-                            break
-                        
-                        try:
-                            # Scroll link into view
-                            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", link)
-                            self._human_like_delay(0.5, 1.0)
-                            
-                            # Click on the link to open details
-                            link.click()
-                            self._human_like_delay(2, 3)
-                            
-                            # Extract from details panel
-                            business_data = self._extract_from_details_panel(driver)
-                            
-                            if business_data and business_data.get("name"):
-                                name = business_data.get("name")
-                                if name and name not in extracted_names:
-                                    extracted_names.add(name)
-                                    results.append(business_data)
-                                    found_new = True
-                                    logger.info(f"Extracted: {name}")
-                            
-                        except Exception as e:
-                            logger.debug(f"Error extracting from link: {e}")
-                            continue
-                    
-                    if found_new and len(results) < max_results:
-                        # Scroll down to load more results
-                        try:
-                            scrollable = driver.find_element(By.CSS_SELECTOR, "div[role='main']")
-                            driver.execute_script("arguments[0].scrollTop += 1000;", scrollable)
-                            self._human_like_delay(2, 3)
-                            scroll_attempts += 1
-                        except Exception:
-                            scroll_attempts += 1
-                    else:
-                        if scroll_attempts > 3:
-                            logger.info("No new results found, stopping")
-                            break
-                        scroll_attempts += 1
-                    
-                except Exception as e:
-                    logger.warning(f"Error finding result links: {e}")
-                    scroll_attempts += 1
-                    
-                if scroll_attempts >= max_scroll_attempts:
-                    break
-                
-                # Scroll down to load more results
-                if len(results) < max_results:
+            max_scroll_attempts = 50 if aggressive_scroll else 30
+
+            def get_results_feed():
+                feed_selectors = [
+                    "div[role='feed']",
+                    "div[aria-label*='Results']",
+                    "div.m6QErb",
+                ]
+                for selector in feed_selectors:
                     try:
-                        # Find the scrollable results panel
-                        scrollable_selectors = [
-                            "div[role='main']",
-                            ".m6QErb",
-                            "[aria-label*='Results']"
-                        ]
-                        
-                        scrollable_element = None
-                        for selector in scrollable_selectors:
-                            try:
-                                scrollable_element = driver.find_element(By.CSS_SELECTOR, selector)
-                                break
-                            except NoSuchElementException:
-                                continue
-                        
-                        if scrollable_element:
-                            self._scroll_page(scrollable_element, scroll_amount=500)
+                        element = driver.find_element(By.CSS_SELECTOR, selector)
+                        if element:
+                            return element
+                    except NoSuchElementException:
+                        continue
+                return None
+
+            def try_open_results_list():
+                view_selectors = [
+                    "//button[contains(., 'View all') or contains(., 'More places') or contains(., 'More results')]",
+                    "//a[contains(., 'View all') or contains(., 'More places') or contains(., 'More results')]",
+                ]
+                for selector in view_selectors:
+                    try:
+                        buttons = driver.find_elements(By.XPATH, selector)
+                        for btn in buttons:
+                            if btn.is_displayed():
+                                btn.click()
+                                self._human_like_delay(2, 3)
+                                return True
+                    except Exception:
+                        continue
+                return False
+
+            def collect_place_links():
+                feed = get_results_feed()
+                retry_reopen = aggressive_scroll
+                if not feed:
+                    try:
+                        WebDriverWait(driver, 8).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, "div[role='feed'], div[aria-label*='Results'], a[href*='/maps/place/']"))
+                        )
+                    except TimeoutException:
+                        pass
+                    try_open_results_list()
+                    feed = get_results_feed()
+                links = []
+                seen = set()
+                empty_passes = 0
+
+                for attempt in range(max_scroll_attempts):
+                    self._human_like_delay(1.0, 2.0)
+                    try:
+                        if feed:
+                            candidates = feed.find_elements(By.CSS_SELECTOR, "a[href*='/maps/place/'], a.hfpxzc")
                         else:
-                            # Fallback: scroll the page
-                            driver.execute_script("window.scrollBy(0, 500);")
-                            self._human_like_delay(1, 2)
-                        
-                        scroll_attempts += 1
-                        
-                        # Wait for new content to load
-                        self._human_like_delay(2, 3)
-                        
-                        if not found_new:
-                            logger.info("No new results found, stopping scroll")
-                            break
-                            
-                    except Exception as e:
-                        logger.warning(f"Error scrolling: {e}")
+                            candidates = driver.find_elements(By.CSS_SELECTOR, "a[href*='/maps/place/'], a.hfpxzc")
+                    except StaleElementReferenceException:
+                        feed = get_results_feed()
+                        continue
+
+                    before = len(seen)
+                    for link in candidates:
+                        try:
+                            href = link.get_attribute("href")
+                            if href and href not in seen:
+                                seen.add(href)
+                                links.append(href)
+                                if len(links) >= max_results:
+                                    return links
+                        except StaleElementReferenceException:
+                            continue
+
+                    if not feed:
+                        try:
+                            soup = BeautifulSoup(driver.page_source, "html.parser")
+                            for anchor in soup.select("a[href*='/maps/place/']"):
+                                href = anchor.get("href")
+                                if href and href not in seen:
+                                    seen.add(href)
+                                    links.append(href)
+                                    if len(links) >= max_results:
+                                        return links
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            js_links = driver.execute_script(
+                                "return Array.from(document.querySelectorAll(\"a[href*='/maps/place/']\")).map(a => a.href);"
+                            )
+                            for href in js_links:
+                                if href and href not in seen:
+                                    seen.add(href)
+                                    links.append(href)
+                                    if len(links) >= max_results:
+                                        return links
+                        except Exception:
+                            pass
+
+                    if len(seen) == before:
+                        empty_passes += 1
+                    else:
+                        empty_passes = 0
+
+                    if empty_passes >= 8:
+                        if retry_reopen:
+                            retry_reopen = False
+                            logger.info("Reopening results list to collect more links")
+                            driver.get(search_url)
+                            self._human_like_delay(2, 3)
+                            self._handle_consent(driver)
+                            try_open_results_list()
+                            feed = get_results_feed()
+                            empty_passes = 0
+                            continue
                         break
-                else:
-                    break
+
+                    if feed:
+                        self._scroll_page(feed, scroll_amount=random.randint(550, 850))
+                    else:
+                        driver.execute_script(f"window.scrollBy(0, {random.randint(550, 850)});")
+                        self._human_like_delay(1.0, 2.0)
+
+                    if attempt > 0 and attempt % 5 == 0:
+                        self._cooldown(2.5)
+
+                    feed = get_results_feed()
+
+                return links
+
+            place_links = collect_place_links()
+            if not place_links:
+                logger.warning("No results list items found, stopping")
+            else:
+                logger.info(f"Collected {len(place_links)} place links")
+                for href in place_links[:max_results]:
+                    if len(results) >= max_results:
+                        break
+                    try:
+                        driver.get(href)
+                        self._human_like_delay(2.2, 3.4)
+                        self._handle_consent(driver)
+                        if self._is_blocked_page(driver):
+                            logger.warning("Hit block/interstitial while opening a place page. Stopping early.")
+                            break
+                        business_data = self._extract_from_details_panel(driver)
+                        if business_data and business_data.get("name"):
+                            name = business_data.get("name")
+                            if name and name not in extracted_names:
+                                extracted_names.add(name)
+                                results.append(business_data)
+                                logger.info(f"Extracted: {name}")
+                        self._cooldown(1.8)
+                    except Exception as e:
+                        logger.debug(f"Error extracting from link: {e}")
+                        continue
             
             logger.info(f"Successfully extracted {len(results)} businesses")
             return results[:max_results]
@@ -377,7 +458,8 @@ class GoogleMapsScraper:
             "website": None,
             "rating": None,
             "reviews": None,
-            "category": None
+            "category": None,
+            "open_status": None
         }
         
         try:
@@ -539,7 +621,8 @@ class GoogleMapsScraper:
             "website": None,
             "rating": None,
             "reviews": None,
-            "category": None
+            "category": None,
+            "open_status": None
         }
         
         try:
@@ -629,6 +712,24 @@ class GoogleMapsScraper:
             category_elem = soup.select_one("button[jsaction*='pane.category']")
             if category_elem:
                 business_data["category"] = category_elem.get_text(strip=True)
+
+            # Extract open/closed status
+            hours_elem = soup.select_one("button[jsaction*='pane.hours'], div[aria-label*='Open'], div[aria-label*='Closed']")
+            if hours_elem:
+                hours_text = hours_elem.get_text(strip=True)
+                if "Open" in hours_text:
+                    business_data["open_status"] = "open"
+                elif "Closed" in hours_text:
+                    business_data["open_status"] = "closed"
+            if not business_data["open_status"]:
+                for badge in soup.select("span, div"):
+                    text = badge.get_text(strip=True)
+                    if text.startswith("Open"):
+                        business_data["open_status"] = "open"
+                        break
+                    if text.startswith("Closed"):
+                        business_data["open_status"] = "closed"
+                        break
             
             # Only return if we have at least a name
             if business_data["name"] and self._is_valid_business_name(business_data["name"]):

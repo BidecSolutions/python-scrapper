@@ -1,6 +1,6 @@
 """Job-based API routes with database persistence"""
 import logging
-from typing import List
+from typing import Any, Dict, List, Union
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import or_
@@ -10,12 +10,35 @@ from app.api.routes_auth import get_current_user
 from app.api.routes_workspaces import get_current_workspace
 from app.api.schemas import ScrapeRequest, LeadOut
 from app.core.db import get_db
-from app.core.orm import JobStatus, LeadORM, ScrapeJobORM, UserORM
+from app.core.orm import ActivityLogORM, JobStatus, LeadORM, ScrapeJobORM, UserORM
 from app.core.orm_workspaces import WorkspaceORM
-from app.workers.job_worker import spawn_job_worker
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _normalize_tech_stack(tech_stack: Union[List[str], Dict[str, Any], None]) -> List[str]:
+    """Convert tech_stack from dict or list to list format (matches LeadOut schema)."""
+    if tech_stack is None:
+        return []
+
+    if isinstance(tech_stack, list):
+        return [str(item) for item in tech_stack if item]
+
+    if isinstance(tech_stack, dict):
+        result: List[str] = []
+        for key, value in tech_stack.items():
+            if key and str(key) not in result:
+                result.append(str(key))
+            if isinstance(value, list):
+                for item in value:
+                    if item and str(item) not in result:
+                        result.append(str(item))
+            elif value and str(value) not in result:
+                result.append(str(value))
+        return result
+
+    return [str(tech_stack)] if tech_stack else []
 
 
 def _update_job_progress(db: Session, job_id: int, processed: int, total: int):
@@ -86,6 +109,40 @@ def _get_job_for_workspace(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+@router.get("/jobs/{job_id}/logs")
+def get_job_logs(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
+):
+    """Fetch recent activity logs for a job."""
+    org_id, workspace_id = _require_org_and_workspace(current_user, workspace)
+    _get_job_for_workspace(db, job_id, org_id, workspace_id)
+
+    logs = (
+        db.query(ActivityLogORM)
+        .filter(
+            ActivityLogORM.job_id == job_id,
+            ActivityLogORM.organization_id == org_id,
+        )
+        .order_by(ActivityLogORM.created_at.desc())
+        .limit(50)
+        .all()
+    )
+
+    return [
+        {
+            "id": log.id,
+            "created_at": log.created_at.isoformat() if log.created_at else None,
+            "activity_type": log.activity_type,
+            "description": log.description,
+            "meta": log.meta or {},
+        }
+        for log in logs
+    ]
 
 
 @router.get("/jobs", response_model=List[dict])
@@ -342,9 +399,11 @@ def get_job_leads(
             quality_label=lead.quality_label,
             tags=lead.tags or [],
             cms=lead.cms,
-            tech_stack=lead.tech_stack or [],
+            tech_stack=_normalize_tech_stack(lead.tech_stack),
             social_links=lead.social_links or {},
             metadata=lead.meta or {},
+            ai_status=lead.ai_status,
+            ai_last_error=lead.ai_last_error,
         )
         for lead in leads
     ]
@@ -395,17 +454,19 @@ async def run_scrape_job(
         # Commit before spawning the worker so it's visible
         db.commit()
         
-        # Spawn worker process outside the request thread
+        # Run job in background (in-process async task to avoid Windows spawn issues)
         try:
-            spawn_job_worker(job.id, org_id, payload_dict)
+            import asyncio
+            from app.api.background_job_executor import execute_job_background
+            asyncio.create_task(execute_job_background(job.id, org_id, payload_dict))
         except Exception as worker_error:
-            logger.error(f"Failed to spawn worker for job {job.id}: {worker_error}", exc_info=True)
+            logger.error(f"Failed to start background task for job {job.id}: {worker_error}", exc_info=True)
             job.status = JobStatus.failed
-            job.error_message = "Unable to start worker process"
+            job.error_message = "Unable to start background task"
             db.commit()
             raise HTTPException(
                 status_code=500,
-                detail="Unable to start worker process for this job. Please try again.",
+                detail="Unable to start background task for this job. Please try again.",
             )
         
         # Return job immediately (scraping will happen in background)
@@ -463,3 +524,92 @@ async def run_scrape_job(
             status_code=500, 
             detail=f"Job failed: {error_msg}"
         )
+
+
+@router.post("/jobs/{job_id}/retry", response_model=dict)
+async def retry_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
+) -> dict:
+    """Retry a scrape job with the same parameters."""
+    import asyncio
+    from datetime import timezone, datetime
+    from app.api.background_job_executor import execute_job_background
+
+    org_id, workspace_id = _require_org_and_workspace(current_user, workspace)
+    job = _get_job_for_workspace(db, job_id, org_id, workspace_id)
+
+    # Reset job state
+    job.status = JobStatus.pending
+    job.error_message = None
+    job.result_count = 0
+    job.started_at = None
+    job.completed_at = None
+    job.duration_seconds = None
+    job.processed_targets = 0
+    job.total_targets = None
+    job.sites_crawled = 0
+    job.sites_failed = 0
+    job.total_pages_crawled = 0
+    job.sources_used = job.sources_used or []
+
+    payload_dict = {
+        "niche": job.niche,
+        "location": job.location,
+        "max_results": job.max_results,
+        "max_pages_per_site": job.max_pages_per_site,
+        "sources": job.sources_used or ["google_search", "google_places", "web_search"],
+        "extract": job.extract_config or {},
+    }
+
+    db.commit()
+    try:
+        activity = ActivityLogORM(
+            job_id=job.id,
+            organization_id=org_id,
+            activity_type="job.retry",
+            description="Retry requested",
+            meta={"requested_by": current_user.id},
+        )
+        db.add(activity)
+        db.commit()
+    except Exception:
+        db.rollback()
+
+    try:
+        asyncio.create_task(execute_job_background(job.id, org_id, payload_dict))
+    except Exception as worker_error:
+        logger.error(f"Failed to start background task for retry {job.id}: {worker_error}", exc_info=True)
+        job.status = JobStatus.failed
+        job.error_message = "Unable to start background task"
+        job.completed_at = datetime.now(timezone.utc)
+        db.commit()
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to start background task for retry. Please try again.",
+        )
+
+    return {
+        "id": job.id,
+        "niche": job.niche,
+        "location": job.location,
+        "max_results": job.max_results,
+        "max_pages_per_site": job.max_pages_per_site,
+        "status": job.status.value,
+        "error_message": job.error_message,
+        "result_count": job.result_count,
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+        "updated_at": job.updated_at.isoformat() if job.updated_at else None,
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "duration_seconds": job.duration_seconds,
+        "sites_crawled": job.sites_crawled or 0,
+        "sites_failed": job.sites_failed or 0,
+        "total_pages_crawled": job.total_pages_crawled or 0,
+        "sources_used": job.sources_used or [],
+        "total_targets": job.total_targets,
+        "processed_targets": job.processed_targets or 0,
+        "extract_config": job.extract_config or {},
+    }

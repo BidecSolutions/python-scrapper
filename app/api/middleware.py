@@ -1,10 +1,13 @@
 """API middleware for authentication and authorization"""
+import logging
 from fastapi import Request, HTTPException, Depends, Header
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_db
 from app.services.auth_service import AuthService
 from app.core.orm import UserORM, OrganizationORM
+
+logger = logging.getLogger(__name__)
 
 
 async def get_organization_from_api_key(
@@ -31,6 +34,8 @@ async def get_organization_from_auth(
     """Dependency to get organization from JWT token (future implementation)"""
     # TODO: Implement JWT token verification
     # For now, this is a placeholder
+    if authorization:
+        logger.info("JWT auth header received but JWT verification is not implemented.")
     raise HTTPException(status_code=501, detail="JWT authentication not yet implemented")
 
 
@@ -43,7 +48,7 @@ async def require_role(required_role: str = "member"):
         # TODO: Get current user from session/token
         # For now, we'll check at the organization level
         # In production, you'd check the user's role in the organization
-        pass
+        return org
     
     return role_checker
 

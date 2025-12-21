@@ -158,6 +158,18 @@ def linkedin_capture(
                 )
                 db.add(list_lead)
                 db.commit()
+
+    # 3.6. Add tags if provided
+    if payload.tags:
+        existing_tags = lead.tags or []
+        added = False
+        for tag in payload.tags:
+            if tag and tag not in existing_tags:
+                existing_tags.append(tag)
+                added = True
+        if added:
+            lead.tags = existing_tags
+            db.commit()
     
     job_ref = None
     

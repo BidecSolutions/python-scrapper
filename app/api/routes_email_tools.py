@@ -1,10 +1,11 @@
 """Email tools API - First-class email finder and verifier endpoints"""
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.core.db import get_db
 from app.core.orm import (
@@ -781,4 +782,75 @@ def process_verification_job(job_id: int, org_id: int):
             db.commit()
     finally:
         db.close()
+
+
+@router.get("/verification/sla")
+def get_verification_sla(db: Session = Depends(get_db)):
+    """Get SLA metrics for verification backlog and success rate."""
+    org = get_or_create_default_org(db)
+    now = datetime.utcnow()
+
+    pending_statuses = [EmailVerificationJobStatus.pending, EmailVerificationJobStatus.running]
+
+    pending_jobs = db.query(EmailVerificationJobORM).filter(
+        EmailVerificationJobORM.organization_id == org.id,
+        EmailVerificationJobORM.status.in_(pending_statuses),
+    ).count()
+
+    pending_items = db.query(EmailVerificationItemORM).join(
+        EmailVerificationJobORM, EmailVerificationJobORM.id == EmailVerificationItemORM.job_id
+    ).filter(
+        EmailVerificationJobORM.organization_id == org.id,
+        EmailVerificationJobORM.status.in_(pending_statuses),
+        EmailVerificationItemORM.status.in_(["pending", "processing"]),
+    ).all()
+
+    pending_count = len(pending_items)
+    if pending_items:
+        ages_hours = [
+            (now - item.created_at).total_seconds() / 3600
+            for item in pending_items
+            if item.created_at
+        ]
+        avg_age_hours = round(sum(ages_hours) / len(ages_hours), 2) if ages_hours else 0.0
+        oldest_hours = round(max(ages_hours), 2) if ages_hours else 0.0
+    else:
+        avg_age_hours = 0.0
+        oldest_hours = 0.0
+
+    since = now - timedelta(days=30)
+    source_rows = (
+        db.query(
+            EmailVerificationJobORM.source_type,
+            func.sum(EmailVerificationJobORM.total_emails).label("total"),
+            func.sum(EmailVerificationJobORM.valid_count).label("valid"),
+        )
+        .filter(
+            EmailVerificationJobORM.organization_id == org.id,
+            EmailVerificationJobORM.status == EmailVerificationJobStatus.completed,
+            EmailVerificationJobORM.created_at >= since,
+        )
+        .group_by(EmailVerificationJobORM.source_type)
+        .all()
+    )
+
+    by_source = []
+    for row in source_rows:
+        total = int(row.total or 0)
+        valid = int(row.valid or 0)
+        rate = round((valid / total) * 100, 2) if total else 0.0
+        by_source.append({
+            "source_type": row.source_type,
+            "total": total,
+            "valid": valid,
+            "success_rate": rate,
+        })
+
+    return {
+        "pending_jobs": pending_jobs,
+        "pending_emails": pending_count,
+        "avg_pending_age_hours": avg_age_hours,
+        "oldest_pending_age_hours": oldest_hours,
+        "by_source": by_source,
+    }
 

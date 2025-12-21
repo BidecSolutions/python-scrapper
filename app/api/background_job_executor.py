@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from app.core.db import SessionLocal
-from app.core.orm import ScrapeJobORM, JobStatus, LeadORM
+from app.core.orm import ActivityLogORM, ScrapeJobORM, JobStatus, LeadORM
 from app.scraper.async_crawler import AsyncCrawler
 from app.services.async_lead_service import AsyncLeadService
 from app.services.lead_repo import upsert_leads
@@ -14,6 +14,19 @@ from app.sources.web_search import WebSearchSource
 from app.sources.basic_web_search import BasicWebSearchSource
 
 logger = logging.getLogger(__name__)
+
+
+def _duration_seconds(started_at: datetime | None, completed_at: datetime | None) -> int | None:
+    """Compute duration in seconds while normalizing timezone awareness."""
+    if not started_at or not completed_at:
+        return None
+
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    if completed_at.tzinfo is None:
+        completed_at = completed_at.replace(tzinfo=timezone.utc)
+
+    return int((completed_at - started_at).total_seconds())
 
 
 def _update_job_progress(db: Session, job_id: int, processed: int, total: int):
@@ -29,6 +42,26 @@ def _update_job_progress(db: Session, job_id: int, processed: int, total: int):
             db.commit()
     except Exception as e:
         logger.warning(f"Failed to update job progress: {e}")
+        try:
+            db.rollback()
+        except:
+            pass
+
+
+def _log_job_activity(db: Session, job_id: int, org_id: int, activity_type: str, description: str, meta=None):
+    """Persist a simple activity log for the job."""
+    try:
+        log = ActivityLogORM(
+            job_id=job_id,
+            organization_id=org_id,
+            activity_type=activity_type,
+            description=description,
+            meta=meta or {},
+        )
+        db.add(log)
+        db.commit()
+    except Exception as e:
+        logger.warning(f"Failed to write activity log for job {job_id}: {e}")
         try:
             db.rollback()
         except:
@@ -52,6 +85,7 @@ async def execute_job_background(job_id: int, org_id: int, payload_dict: dict):
         job = db.query(ScrapeJobORM).filter(ScrapeJobORM.id == job_id).first()
         if not job:
             logger.error(f"Job {job_id} not found")
+            _log_job_activity(db, job_id, org_id, "job.error", "Job not found")
             return
         
         # Update status to running
@@ -59,6 +93,7 @@ async def execute_job_background(job_id: int, org_id: int, payload_dict: dict):
         job.started_at = datetime.now(timezone.utc)
         db.commit()
         logger.info(f"Job {job_id} started in background")
+        _log_job_activity(db, job.id, org_id, "job.started", f"Job {job.id} started", {"niche": job.niche, "location": job.location})
         
         # Extract payload data
         niche = payload_dict.get("niche", job.niche)
@@ -185,6 +220,7 @@ async def execute_job_background(job_id: int, org_id: int, payload_dict: dict):
                 logger.error(traceback.format_exc())
                 job.error_message = error_msg
                 leads = []  # Continue with empty list if scraping fails
+                _log_job_activity(db, job.id, org_id, "job.error", "Scraping error", {"message": error_msg})
         
         # Save to DB
         saved_leads = []
@@ -203,23 +239,41 @@ async def execute_job_background(job_id: int, org_id: int, payload_dict: dict):
                 import traceback
                 logger.error(traceback.format_exc())
                 saved_leads = []
+                _log_job_activity(db, job.id, org_id, "job.error", "Error saving leads", {"message": str(save_error)})
+
+        if job.error_message:
+            job.status = JobStatus.failed
+            job.completed_at = datetime.now(timezone.utc)
+            job.duration_seconds = _duration_seconds(job.started_at, job.completed_at)
+            db.commit()
+            _log_job_activity(
+                db,
+                job.id,
+                org_id,
+                "job.failed",
+                f"Job {job.id} failed",
+                {"message": job.error_message},
+            )
+            return
         
         # Update job status
         job.status = JobStatus.completed
         job.result_count = len(saved_leads)
         job.completed_at = datetime.now(timezone.utc)
         if job.started_at:
-            # Ensure both datetimes are timezone-aware for subtraction
-            if job.started_at.tzinfo is None:
-                started_at = job.started_at.replace(tzinfo=timezone.utc)
-            else:
-                started_at = job.started_at
-            duration = (job.completed_at - started_at).total_seconds()
-            job.duration_seconds = int(duration)
+            job.duration_seconds = _duration_seconds(job.started_at, job.completed_at)
         
         # Commit everything together
         db.commit()
         logger.info(f"Job {job.id} completed successfully with {len(saved_leads)} leads")
+        _log_job_activity(
+            db,
+            job.id,
+            org_id,
+            "job.completed",
+            f"Job {job.id} completed with {len(saved_leads)} leads",
+            {"result_count": len(saved_leads), "duration_seconds": job.duration_seconds},
+        )
         
         # Create notification for job completion
         try:

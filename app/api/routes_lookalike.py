@@ -12,7 +12,7 @@ from app.core.orm_lookalike import LookalikeJobORM, LookalikeCandidateORM, Looka
 from app.core.orm_workspaces import WorkspaceORM
 from app.core.orm import UserORM, OrganizationORM
 from app.api.routes_auth import get_current_user
-from app.api.routes_workspaces import get_current_workspace, get_current_user_optional, get_current_workspace_optional
+from app.api.routes_workspaces import get_current_workspace
 from app.services.lookalike_service import build_lookalike_profile, find_lookalikes
 from app.services.activity_logger import log_activity, ActivityType
 
@@ -45,9 +45,9 @@ class LookalikeJobOut(BaseModel):
     status: str
     positive_lead_count: int
     candidates_found: int
-    created_at: str
-    started_at: Optional[str]
-    completed_at: Optional[str]
+    created_at: datetime | str
+    started_at: Optional[datetime | str]
+    completed_at: Optional[datetime | str]
     
     class Config:
         from_attributes = True  # Pydantic v2 equivalent of orm_mode = True
@@ -142,8 +142,8 @@ def create_lookalike_job(
     body: CreateLookalikeJobRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user_optional),
-    workspace: WorkspaceORM = Depends(get_current_workspace_optional),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
 ):
     """Create a new lookalike job"""
     # Validate that at least one source is provided
@@ -203,8 +203,8 @@ def get_lookalike_job(
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user_optional),
-    workspace: WorkspaceORM = Depends(get_current_workspace_optional),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
 ):
     """Get lookalike job with candidates"""
     job = db.query(LookalikeJobORM).filter(
@@ -242,11 +242,11 @@ def get_lookalike_job(
     )
 
 
-@router.get("/jobs", response_model=List[LookalikeJobOut])
+@router.get("/jobs")
 def list_lookalike_jobs(
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user_optional),
-    workspace: WorkspaceORM = Depends(get_current_workspace_optional),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
 ):
     """List lookalike jobs for current workspace"""
     jobs = (
@@ -257,5 +257,30 @@ def list_lookalike_jobs(
         .all()
     )
     
-    return jobs
+    return [
+        {
+            "id": job.id,
+            "workspace_id": job.workspace_id,
+            "started_by_user_id": job.started_by_user_id,
+            "source_segment_id": job.source_segment_id,
+            "source_list_id": job.source_list_id,
+            "source_campaign_id": job.source_campaign_id,
+            "status": job.status.value if hasattr(job.status, "value") else str(job.status),
+            "positive_lead_count": job.positive_lead_count,
+            "candidates_found": job.candidates_found,
+            "created_at": job.created_at.isoformat() if job.created_at else None,
+            "started_at": job.started_at.isoformat() if job.started_at else None,
+            "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        }
+        for job in jobs
+    ]
 
+
+# Ensure there is only one list route registered (avoids duplicates from older imports)
+for existing in list(router.routes):
+    if getattr(existing, "path", None) == "/lookalike/jobs" and "GET" in (getattr(existing, "methods", set()) or set()):
+        try:
+            router.routes.remove(existing)
+        except ValueError:
+            pass
+router.add_api_route("/jobs", list_lookalike_jobs, methods=["GET"], tags=["lookalike"])

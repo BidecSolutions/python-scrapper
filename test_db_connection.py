@@ -1,72 +1,92 @@
-"""Test database connection to PostgreSQL"""
+"""Test database connection (PostgreSQL or SQLite).
+
+This script intentionally does NOT hardcode credentials. It uses `DATABASE_URL`
+from your environment / `python-scrapper/.env`.
+"""
+
+from __future__ import annotations
+
 import os
 import sys
-from urllib.parse import quote_plus
+from urllib.parse import urlparse
 
-# Set the database URL before importing config
-# Password needs to be URL-encoded: @ becomes %40
-DATABASE_URL = "postgresql://postgres.aashvhvwiayvniidvaqk:Newpass%402025%40@aws-1-ap-northeast-2.pooler.supabase.com:6543/Lead_scrapper"
-os.environ["DATABASE_URL"] = DATABASE_URL
 
-try:
-    from app.core.db import engine
-    from sqlalchemy import text
-    
-    print("=" * 60)
-    print("Testing PostgreSQL Database Connection")
-    print("=" * 60)
-    print(f"Database: Lead_scrapper")
-    print(f"Host: aws-1-ap-northeast-2.pooler.supabase.com:6543")
-    print("=" * 60)
-    
-    # Test connection
-    with engine.connect() as conn:
-        result = conn.execute(text("SELECT version();"))
-        version = result.fetchone()[0]
-        print(f"✅ Connection successful!")
-        print(f"PostgreSQL version: {version}")
-        
-        # Test database name
-        result = conn.execute(text("SELECT current_database();"))
-        db_name = result.fetchone()[0]
-        print(f"Current database: {db_name}")
-        
-        # List tables
-        result = conn.execute(text("""
-            SELECT table_name 
-            FROM information_schema.tables 
-            WHERE table_schema = 'public'
-            ORDER BY table_name;
-        """))
-        tables = [row[0] for row in result.fetchall()]
-        print(f"\nTables in database: {len(tables)}")
-        if tables:
-            print("Existing tables:")
-            for table in tables[:10]:  # Show first 10
-                print(f"  - {table}")
-            if len(tables) > 10:
-                print(f"  ... and {len(tables) - 10} more")
-        else:
-            print("No tables found. Run 'python init_db.py' to create tables.")
-    
-    print("\n" + "=" * 60)
-    print("✅ Database connection test PASSED!")
-    print("=" * 60)
-    print("\nNext steps:")
-    print("1. Create a .env file in the python-scrapper directory with:")
-    print("   DATABASE_URL=postgresql://postgres.aashvhvwiayvniidvaqk:Newpass%402025%40@aws-1-ap-northeast-2.pooler.supabase.com:6543/Lead_scrapper")
-    print("2. Run 'python init_db.py' to create database tables")
-    print("3. Run 'python create_user.py' to create admin user")
-    
-except Exception as e:
-    print("\n" + "=" * 60)
-    print("❌ Database connection test FAILED!")
-    print("=" * 60)
-    print(f"Error: {str(e)}")
-    print("\nTroubleshooting:")
-    print("1. Check if psycopg2-binary is installed: pip install psycopg2-binary")
-    print("2. Verify database credentials are correct")
-    print("3. Check if database 'Lead_scrapper' exists")
-    print("4. Verify network connectivity to Supabase")
-    sys.exit(1)
+def safe_db_label(database_url: str) -> str:
+    """Return a redacted, human-friendly label for logs."""
+    parsed = urlparse(database_url)
+    host = parsed.hostname or "unknown-host"
+    port = str(parsed.port) if parsed.port else ""
+    db_name = (parsed.path or "").lstrip("/") or "unknown-db"
+    return f"{host}{(':' + port) if port else ''}/{db_name}"
 
+
+def main() -> int:
+    # Best-effort load of `python-scrapper/.env` for local development.
+    try:
+        from dotenv import load_dotenv  # type: ignore
+
+        load_dotenv(override=False)
+    except Exception:
+        pass
+
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        print("ERROR: DATABASE_URL is not set.")
+        print("Set it in `python-scrapper/.env` or your shell environment.")
+        return 1
+
+    try:
+        from app.core.db import engine
+        from sqlalchemy import text
+
+        print("=" * 60)
+        print("Testing Database Connection")
+        print("=" * 60)
+        print(f"Target: {safe_db_label(database_url)}")
+        print("=" * 60)
+
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+
+            if engine.dialect.name == "postgresql":
+                version = conn.execute(text("SELECT version();")).fetchone()[0]
+                db_name = conn.execute(text("SELECT current_database();")).fetchone()[0]
+                print("OK: Connection successful")
+                print(f"PostgreSQL version: {version}")
+                print(f"Current database: {db_name}")
+
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT table_name
+                        FROM information_schema.tables
+                        WHERE table_schema = 'public'
+                        ORDER BY table_name;
+                        """
+                    )
+                ).fetchall()
+                tables = [row[0] for row in rows]
+                print(f"\nTables in database: {len(tables)}")
+                for table in tables[:10]:
+                    print(f"  - {table}")
+                if len(tables) > 10:
+                    print(f"  ... and {len(tables) - 10} more")
+            else:
+                print("OK: Connection successful")
+                print(f"Dialect: {engine.dialect.name}")
+
+        print("\n" + "=" * 60)
+        print("OK: Database connection test PASSED")
+        print("=" * 60)
+        return 0
+
+    except Exception as exc:
+        print("\n" + "=" * 60)
+        print("ERROR: Database connection test FAILED")
+        print("=" * 60)
+        print(f"Error: {exc}")
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

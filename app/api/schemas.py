@@ -46,6 +46,8 @@ class LeadOut(BaseModel):
     tech_stack: Optional[List[str]] = None
     social_links: dict = {}
     metadata: dict = {}
+    ai_status: Optional[str] = None
+    ai_last_error: Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -118,19 +118,27 @@ def get_current_workspace(
     
     # If no workspace_id provided, try to get user's default workspace
     if ws_id is None:
-        # Get user's first accepted workspace membership
-        membership = db.query(WorkspaceMemberORM).filter(
-            WorkspaceMemberORM.user_id == current_user.id,
-            WorkspaceMemberORM.accepted_at.isnot(None)
-        ).first()
-        
-        if membership:
-            ws_id = membership.workspace_id
+        # Prefer user's current_workspace_id when present (frontend typically relies on this).
+        if current_user.current_workspace_id is not None:
+            ws_id = current_user.current_workspace_id
         else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No workspace specified and user has no workspaces"
+            # Fallback to any accepted workspace membership.
+            membership = (
+                db.query(WorkspaceMemberORM)
+                .filter(
+                    WorkspaceMemberORM.user_id == current_user.id,
+                    WorkspaceMemberORM.accepted_at.isnot(None),
+                )
+                .first()
             )
+
+            if membership:
+                ws_id = membership.workspace_id
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No workspace specified and user has no workspaces",
+                )
     
     # Verify workspace exists
     workspace = db.query(WorkspaceORM).filter(WorkspaceORM.id == ws_id).first()
@@ -545,4 +553,3 @@ def switch_workspace(
         "workspace_slug": workspace.slug,
         "user_role": member.role.value,
     }
-

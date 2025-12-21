@@ -42,3 +42,29 @@ def get_db():
     finally:
         db.close()
 
+
+# Optional async session support for background AI tasks.
+try:
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+
+    ASYNC_DATABASE_URL = settings.DATABASE_URL
+    if ASYNC_DATABASE_URL.startswith("postgresql://"):
+        ASYNC_DATABASE_URL = ASYNC_DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
+    elif ASYNC_DATABASE_URL.startswith("sqlite://"):
+        ASYNC_DATABASE_URL = ASYNC_DATABASE_URL.replace("sqlite://", "sqlite+aiosqlite://")
+
+    async_engine = create_async_engine(
+        ASYNC_DATABASE_URL,
+        echo=False,
+        connect_args=connect_args,
+        pool_pre_ping=True,
+    )
+    AsyncSessionLocal = async_sessionmaker(
+        bind=async_engine,
+        expire_on_commit=False,
+        autoflush=False,
+        autocommit=False,
+    )
+except Exception:
+    AsyncSessionLocal = None
+

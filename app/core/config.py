@@ -7,9 +7,9 @@ try:
     from dotenv import load_dotenv
     import os
     # Try to load .env, but handle errors gracefully
-    # Use override=True to ensure .env values take precedence over system env vars
+    # Use override=False so real environment variables (CI/prod/tests) win over `.env`.
     try:
-        load_dotenv(override=True)
+        load_dotenv(override=False)
     except (ValueError, UnicodeDecodeError) as e:
         # If .env has issues (null chars, encoding), try to load it manually
         env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env')
@@ -22,8 +22,8 @@ try:
                             key, value = line.split('=', 1)
                             key = key.strip()
                             value = value.strip().strip('"').strip("'")
-                            # Set the value (override existing if present, to match load_dotenv(override=True) behavior)
-                            if key:
+                            # Match load_dotenv(override=False): only set if not already present.
+                            if key and key not in os.environ:
                                 os.environ[key] = value
             except Exception:
                 pass  # If manual load fails, just use system env vars
@@ -82,4 +82,3 @@ class Settings:
 
 
 settings = Settings()
-

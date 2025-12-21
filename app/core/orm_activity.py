@@ -18,6 +18,7 @@ class ActivityType(str, PyEnum):
     lead_updated = "lead_updated"
     lead_added_to_list = "lead_added_to_list"
     lead_removed_from_list = "lead_removed_from_list"
+    lead_score_updated = "lead_score_updated"
     
     # Email events
     email_found = "email_found"

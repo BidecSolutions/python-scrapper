@@ -3,14 +3,15 @@ import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_, String
 from pydantic import BaseModel
 from datetime import datetime
 
 from app.core.db import get_db
-from app.core.orm import OrganizationORM
+from app.core.orm import OrganizationORM, LeadORM
 from app.core.orm_lists import LeadListORM, LeadListLeadORM
 from app.api.routes_settings import get_or_create_default_org
+from app.api.schemas import LeadOut
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -42,6 +43,90 @@ class ListUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     is_campaign_ready: Optional[bool] = None
+
+
+class AutomationRuleIn(BaseModel):
+    name: str
+    min_score: int = 0
+    auto_sync: bool = True
+    notify: bool = True
+    conditions: List[dict] = []
+    schedule: dict = {}
+
+
+_automation_rules: List[dict] = []
+_automation_counter = 1
+
+
+@router.get("/lists/{list_id}/leads")
+def get_list_leads(
+    list_id: int,
+    limit: int = 100,
+    offset: int = 0,
+    search: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Get leads in a list with pagination and optional search."""
+    org = get_or_create_default_org(db)
+
+    list_obj = db.query(LeadListORM).filter(
+        LeadListORM.id == list_id,
+        LeadListORM.organization_id == org.id
+    ).first()
+
+    if not list_obj:
+        raise HTTPException(status_code=404, detail="List not found")
+
+    base_query = (
+        db.query(LeadORM)
+        .join(LeadListLeadORM, LeadListLeadORM.lead_id == LeadORM.id)
+        .filter(
+            LeadListLeadORM.list_id == list_id,
+            LeadORM.organization_id == org.id,
+        )
+    )
+
+    if search:
+        search_term = f"%{search}%"
+        base_query = base_query.filter(
+            or_(
+                LeadORM.name.ilike(search_term),
+                LeadORM.website.ilike(search_term),
+                LeadORM.city.ilike(search_term),
+                LeadORM.emails.cast(String).ilike(search_term),
+            )
+        )
+
+    total = base_query.with_entities(func.count(LeadORM.id)).scalar() or 0
+    leads = base_query.order_by(LeadORM.quality_score.desc().nulls_last()).limit(limit).offset(offset).all()
+
+    result = [
+        LeadOut(
+            id=lead.id,
+            name=lead.name,
+            niche=lead.niche,
+            website=lead.website,
+            emails=lead.emails or [],
+            phones=lead.phones or [],
+            address=lead.address,
+            source=lead.source,
+            sources=lead.sources or [lead.source] if lead.source else [],
+            city=lead.city,
+            country=lead.country,
+            quality_score=float(lead.quality_score) if lead.quality_score else None,
+            quality_label=lead.quality_label,
+            tags=lead.tags or [],
+            cms=lead.cms,
+            tech_stack=lead.tech_stack or [],
+            social_links=lead.social_links or {},
+            metadata=lead.meta or {},
+            ai_status=lead.ai_status,
+            ai_last_error=lead.ai_last_error,
+        )
+        for lead in leads
+    ]
+
+    return {"total": total, "leads": result}
 
 
 @router.get("/lists", response_model=List[ListOut])
@@ -249,4 +334,40 @@ def delete_list(
     db.commit()
     
     return {"message": "List deleted"}
+
+
+@router.get("/lists/automation/rules")
+def list_automation_rules():
+    """Return in-memory list automation rules."""
+    return _automation_rules
+
+
+@router.post("/lists/automation/rules", status_code=status.HTTP_201_CREATED)
+def create_automation_rule(body: AutomationRuleIn):
+    """Create a new automation rule (in-memory)."""
+    global _automation_counter
+    rule = {
+        "id": _automation_counter,
+        "name": body.name,
+        "min_score": body.min_score,
+        "auto_sync": body.auto_sync,
+        "notify": body.notify,
+        "conditions": body.conditions,
+        "schedule": body.schedule,
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    _automation_counter += 1
+    _automation_rules.append(rule)
+    return rule
+
+
+@router.delete("/lists/automation/rules/{rule_id}")
+def delete_automation_rule(rule_id: int):
+    """Delete an automation rule (in-memory)."""
+    global _automation_rules
+    before = len(_automation_rules)
+    _automation_rules = [rule for rule in _automation_rules if rule["id"] != rule_id]
+    if len(_automation_rules) == before:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return {"message": "Rule deleted"}
 

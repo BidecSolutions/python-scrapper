@@ -107,7 +107,8 @@ def compute_lead_embedding(lead: LeadORM, company: Optional[CompanyORM] = None) 
     idx = 128  # Start adding lead features after company features
     
     # Title/seniority encoding
-    title = lead.title or lead.contact_person_role
+    # LeadORM doesn't guarantee a `title` attribute across schema versions.
+    title = getattr(lead, "title", None) or getattr(lead, "contact_person_role", None)
     if title:
         title_lower = title.lower()
         
@@ -258,4 +259,3 @@ def compute_reason_vector(
     reason["tech"] = round(tech_sim, 2)
     
     return reason
-

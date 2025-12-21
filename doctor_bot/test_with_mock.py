@@ -1,7 +1,7 @@
 """Test the scraper with mock HTML data (no real website needed)"""
 from bs4 import BeautifulSoup
 import csv
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Mock HTML that simulates a doctor search results page
 MOCK_HTML = """
@@ -107,7 +107,7 @@ def test_scraper_logic():
         filename = "test_results.csv"
         for r in results:
             r["query"] = "test_query"
-            r["timestamp"] = datetime.utcnow().isoformat()
+            r["timestamp"] = datetime.now(timezone.utc).isoformat()
         
         fieldnames = sorted(results[0].keys())
         with open(filename, "w", newline="", encoding="utf-8") as f:
@@ -122,7 +122,7 @@ def test_scraper_logic():
     else:
         print("\n❌ No results extracted. Check your selectors.")
     
-    return results
+    return None
 
 
 if __name__ == "__main__":

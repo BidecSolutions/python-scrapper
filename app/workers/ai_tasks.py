@@ -28,6 +28,10 @@ async def ai_enrich_lead_task(lead_id: int, llm_client=None):
         lead_id: ID of lead to enrich
         llm_client: LLM client (optional, uses mock if not provided)
     """
+    if AsyncSessionLocal is None:
+        logger.error("AsyncSessionLocal is not available; cannot run AI enrichment task.")
+        return
+
     async with AsyncSessionLocal() as db:
         try:
             # Get lead

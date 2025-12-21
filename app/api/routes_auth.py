@@ -9,6 +9,7 @@ from datetime import datetime
 
 from app.core.db import get_db
 from app.core.orm import UserORM, UserStatus, OrganizationORM
+from app.core.orm_workspaces import WorkspaceMemberORM
 from app.services.auth_service import AuthService
 from app.services.jwt_service import create_user_token, decode_access_token
 
@@ -194,6 +195,17 @@ def login(
     
     # Update last login
     user.last_login_at = datetime.utcnow()
+    if user.current_workspace_id is None:
+        membership = (
+            db.query(WorkspaceMemberORM)
+            .filter(
+                WorkspaceMemberORM.user_id == user.id,
+                WorkspaceMemberORM.accepted_at.isnot(None),
+            )
+            .first()
+        )
+        if membership:
+            user.current_workspace_id = membership.workspace_id
     db.add(user)
     db.commit()
     

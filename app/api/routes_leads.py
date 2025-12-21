@@ -5,16 +5,25 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlalchemy import String, or_
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
 from app.api.routes_auth import get_current_user
 from app.api.routes_workspaces import get_current_workspace
 from app.api.schemas import LeadOut
 from app.core.db import get_db
 from app.core.orm import LeadORM, UserORM
+from app.core.orm_activity import ActivityORM, ActivityType
 from app.core.orm_workspaces import WorkspaceORM
 from app.services.export_service import ExportService
+from app.services.lead_scoring_service import explain_lead_score
 
 router = APIRouter()
+
+
+class BulkTagRequest(BaseModel):
+    lead_ids: List[int]
+    tag: str
+    action: str = "add"
 
 
 def _require_org_and_workspace(
@@ -156,6 +165,8 @@ def get_leads(
             tech_stack=_normalize_tech_stack(lead.tech_stack),
             social_links=lead.social_links or {},
             metadata=lead.meta or {},
+            ai_status=lead.ai_status,
+            ai_last_error=lead.ai_last_error,
         )
         for lead in leads
     ]
@@ -340,5 +351,120 @@ def get_lead(
         tech_stack=_normalize_tech_stack(lead.tech_stack),
         social_links=lead.social_links or {},
         metadata=lead.meta or {},
+        ai_status=lead.ai_status,
+        ai_last_error=lead.ai_last_error,
     )
+
+
+@router.get("/leads/{lead_id}/score-explain")
+def get_lead_score_explain(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
+):
+    """Get explainable score breakdown for a lead."""
+    org_id, workspace_id = _require_org_and_workspace(current_user, workspace)
+    lead = (
+        db.query(LeadORM)
+        .filter(
+            LeadORM.id == lead_id,
+            LeadORM.organization_id == org_id,
+            or_(LeadORM.workspace_id == workspace_id, LeadORM.workspace_id.is_(None)),
+        )
+        .first()
+    )
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    return explain_lead_score(db, lead)
+
+
+@router.get("/leads/{lead_id}/score-history")
+def get_lead_score_history(
+    lead_id: int,
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
+):
+    """Get lead score change history."""
+    org_id, workspace_id = _require_org_and_workspace(current_user, workspace)
+    lead = (
+        db.query(LeadORM)
+        .filter(
+            LeadORM.id == lead_id,
+            LeadORM.organization_id == org_id,
+            or_(LeadORM.workspace_id == workspace_id, LeadORM.workspace_id.is_(None)),
+        )
+        .first()
+    )
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    history = (
+        db.query(ActivityORM)
+        .filter(
+            ActivityORM.organization_id == org_id,
+            ActivityORM.lead_id == lead_id,
+            ActivityORM.type == ActivityType.lead_score_updated,
+        )
+        .order_by(ActivityORM.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    return [
+        {
+            "id": item.id,
+            "created_at": item.created_at.isoformat(),
+            "score_type": (item.meta or {}).get("score_type"),
+            "previous_score": (item.meta or {}).get("previous_score"),
+            "new_score": (item.meta or {}).get("new_score"),
+            "delta": (item.meta or {}).get("delta"),
+        }
+        for item in history
+    ]
+
+
+@router.post("/leads/tags/bulk")
+def bulk_update_tags(
+    body: BulkTagRequest,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+    workspace: WorkspaceORM = Depends(get_current_workspace),
+):
+    """Add or remove a tag across multiple leads."""
+    org_id, workspace_id = _require_org_and_workspace(current_user, workspace)
+    if not body.tag or not body.tag.strip():
+        raise HTTPException(status_code=400, detail="Tag is required")
+
+    if body.action not in {"add", "remove"}:
+        raise HTTPException(status_code=400, detail="Invalid action")
+
+    leads = (
+        db.query(LeadORM)
+        .filter(
+            LeadORM.organization_id == org_id,
+            LeadORM.id.in_(body.lead_ids),
+            or_(LeadORM.workspace_id == workspace_id, LeadORM.workspace_id.is_(None)),
+        )
+        .all()
+    )
+
+    updated = 0
+    tag_value = body.tag.strip()
+    for lead in leads:
+        existing = lead.tags or []
+        if body.action == "add":
+            if tag_value not in existing:
+                lead.tags = existing + [tag_value]
+                updated += 1
+        else:
+            if tag_value in existing:
+                lead.tags = [tag for tag in existing if tag != tag_value]
+                updated += 1
+
+    db.commit()
+    return {"updated": updated, "action": body.action, "tag": tag_value}
 

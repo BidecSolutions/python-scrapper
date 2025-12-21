@@ -64,6 +64,7 @@ from app.api.routes_usage import router as usage_router
 from app.api.routes_leads_email_status import router as leads_email_status_router
 from app.api.routes_dashboard_linkedin import router as dashboard_linkedin_router
 from app.api.routes_playbooks import router as playbooks_router
+from app.api.routes_engines import router as engines_router
 from app.api.routes_analytics import router as analytics_router
 from app.api.routes_company_search import router as company_search_router
 from app.api.routes_segments import router as segments_router
@@ -83,6 +84,7 @@ from app.api.routes_tech_intent import router as tech_intent_router
 from app.api.routes_auth import router as auth_router
 from app.api.routes_admin_users import router as admin_users_router
 from app.api.routes_admin_activity import router as admin_activity_router
+from app.api.routes_admin_seed import router as admin_seed_router
 from app.api.routes_workspace_activity import router as workspace_activity_router
 from app.api.routes_notifications import router as notifications_router
 from app.api.routes_deals import router as deals_router
@@ -93,6 +95,8 @@ from app.api.routes_saved_views import router as saved_views_router
 from app.api.routes_duplicates import router as duplicates_router
 from app.api.routes_health_score import router as health_score_router
 from app.api.routes_google_maps import router as google_maps_router
+from app.api.routes_onboarding import router as onboarding_router
+from app.api.routes_enrichment import router as enrichment_router
 
 # Configure logging (logger already defined at top)
 logging.basicConfig(level=logging.INFO)
@@ -163,6 +167,7 @@ def create_app() -> FastAPI:
     # Register playbooks_router BEFORE ml_router to avoid route conflict
     # (ml_router has /playbooks/{playbook_id} which would match /playbooks/jobs)
     app.include_router(playbooks_router, prefix="/api", tags=["playbooks"])
+    app.include_router(engines_router, prefix="/api", tags=["engines"])
     # ML routes are optional - only include if available (numpy/scikit-learn installed)
     if ML_ROUTES_AVAILABLE and ml_router:
         app.include_router(ml_router, prefix="/api", tags=["ml"])
@@ -201,6 +206,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix="/api", tags=["auth"])
     app.include_router(admin_users_router, prefix="/api", tags=["admin"])
     app.include_router(admin_activity_router, prefix="/api", tags=["admin"])
+    app.include_router(admin_seed_router, prefix="/api", tags=["admin"])
     app.include_router(workspace_activity_router, prefix="/api", tags=["activity"])
     app.include_router(notifications_router, prefix="/api", tags=["notifications"])
     app.include_router(deals_router, prefix="/api", tags=["deals"])
@@ -208,6 +214,8 @@ def create_app() -> FastAPI:
     app.include_router(templates_router, prefix="/api", tags=["templates"])
     app.include_router(lookalike_router, prefix="/api", tags=["lookalike"])
     app.include_router(saved_views_router, prefix="/api", tags=["saved-views"])
+    app.include_router(onboarding_router, prefix="/api", tags=["onboarding"])
+    app.include_router(enrichment_router, prefix="/api", tags=["enrichment"])
     app.include_router(duplicates_router, prefix="/api", tags=["duplicates"])
     app.include_router(health_score_router, prefix="/api", tags=["health-score"])
     app.include_router(google_maps_router, prefix="/api", tags=["google-maps"])

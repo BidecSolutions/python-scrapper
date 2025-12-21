@@ -1,6 +1,6 @@
 """Pydantic schemas for LinkedIn capture API"""
 from pydantic import BaseModel, Field, AnyHttpUrl, EmailStr
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 from datetime import datetime
 
 
@@ -43,6 +43,11 @@ class LinkedInCaptureRequest(BaseModel):
     list_id: Optional[int] = Field(
         None,
         description="If provided, add lead to this list (future feature)"
+    )
+
+    tags: Optional[List[str]] = Field(
+        None,
+        description="Optional tags to add to the lead"
     )
     
     auto_find_email: bool = Field(
