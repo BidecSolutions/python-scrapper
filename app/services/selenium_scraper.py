@@ -15,6 +15,12 @@ import json
 
 logger = logging.getLogger(__name__)
 
+from app.services.chrome_driver import (
+    create_chrome_driver,
+    ensure_display_or_headless,
+    resolve_chrome_binary,
+)
+
 
 class SeleniumScraper:
     """Interactive web scraper using Selenium for sites requiring search interactions"""
@@ -32,6 +38,7 @@ class SeleniumScraper:
     def _get_driver(self):
         """Get or create Chrome driver"""
         if self.driver is None:
+            ensure_display_or_headless(self.headless)
             chrome_options = Options()
             if self.headless:
                 chrome_options.add_argument("--headless=new")
@@ -41,18 +48,13 @@ class SeleniumScraper:
             chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             chrome_options.add_experimental_option('useAutomationExtension', False)
             chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+            chrome_binary = resolve_chrome_binary()
+            if chrome_binary:
+                chrome_options.binary_location = chrome_binary
             
             try:
-                # Try to use webdriver-manager if available
-                try:
-                    from webdriver_manager.chrome import ChromeDriverManager
-                    self.driver = webdriver.Chrome(
-                        service=Service(ChromeDriverManager().install()),
-                        options=chrome_options
-                    )
-                except ImportError:
-                    # Fallback to system Chrome
-                    self.driver = webdriver.Chrome(options=chrome_options)
+                self.driver = create_chrome_driver(chrome_options)
             except Exception as e:
                 logger.error(f"Failed to create Chrome driver: {e}")
                 raise ValueError(f"Chrome driver not available: {e}")

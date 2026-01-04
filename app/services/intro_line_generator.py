@@ -1,33 +1,33 @@
 """AI-powered intro line generator for leads"""
 import logging
+import os
 from typing import Optional
 from sqlalchemy.orm import Session
 from datetime import datetime
 
 from app.core.orm import LeadORM
 from app.core.orm_companies import CompanyORM
-# Import LLM client - use Groq if available, fallback to OpenAI
-try:
-    from app.ai.llm_clients import GroqLLMClient
-    if GroqLLMClient:
-        def get_llm_client():
-            return GroqLLMClient()
-    else:
-        raise ImportError
-except ImportError:
-    try:
-        from app.ai.llm_clients import OpenAILLMClient
-        if OpenAILLMClient:
-            def get_llm_client():
-                return OpenAILLMClient()
-        else:
-            raise ImportError
-    except ImportError:
-        logger.error("No LLM client available. Install groq or openai.")
-        def get_llm_client():
-            raise ValueError("No LLM client configured")
 
 logger = logging.getLogger(__name__)
+
+
+def _env_truthy(value: Optional[str]) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def llm_enabled() -> bool:
+    """
+    LLM features are disabled by default so the API can run without Groq/OpenAI/Anthropic.
+
+    Enable explicitly with:
+      - ENABLE_LLM=1
+
+    Force-disable with:
+      - DISABLE_LLM=1
+    """
+    if _env_truthy(os.getenv("DISABLE_LLM")):
+        return False
+    return _env_truthy(os.getenv("ENABLE_LLM"))
 
 
 def generate_intro_line_for_lead(
@@ -49,6 +49,10 @@ def generate_intro_line_for_lead(
     # Skip if already generated and not regenerating
     if lead.intro_line and not regenerate:
         return lead.intro_line
+
+    if not llm_enabled():
+        logger.info("Intro line generation skipped (LLM disabled).")
+        return None
     
     try:
         # Build context from lead and company
@@ -98,31 +102,11 @@ Context:
 
 Generate only the first line, nothing else. Do not include quotes or formatting."""
 
-        # Call LLM
-        llm_client = get_llm_client()
-        response = llm_client.generate_text(
-            prompt=prompt,
-            system_prompt="You are an expert at writing personalized, warm outreach messages. Generate concise, specific first lines that feel human and relevant.",
-            max_tokens=100,
-            temperature=0.8,
-        )
+        # LLM integration is intentionally disabled by default.
+        # If you want to enable it, implement a provider adapter in this module.
+        logger.warning("LLM is enabled, but intro line LLM adapter is not implemented.")
+        return None
         
-        if response and response.strip():
-            intro_line = response.strip()
-            # Remove quotes if present
-            intro_line = intro_line.strip('"').strip("'")
-            
-            # Update lead
-            lead.intro_line = intro_line
-            lead.intro_line_generated_at = datetime.utcnow()
-            db.commit()
-            
-            logger.info(f"Generated intro line for lead {lead.id}")
-            return intro_line
-        else:
-            logger.warning(f"Empty response from LLM for lead {lead.id}")
-            return None
-            
     except Exception as e:
         logger.error(f"Failed to generate intro line for lead {lead.id}: {e}", exc_info=True)
         return None

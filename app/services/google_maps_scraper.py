@@ -17,6 +17,11 @@ from urllib.parse import urljoin, quote
 
 from app.scraper.extractor import extract_contacts
 from app.utils.text import normalize_email, normalize_phone
+from app.services.chrome_driver import (
+    create_chrome_driver,
+    ensure_display_or_headless,
+    resolve_chrome_binary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +52,7 @@ class GoogleMapsScraper:
     def _get_driver(self):
         """Get or create Chrome driver with anti-detection features"""
         if self.driver is None:
+            ensure_display_or_headless(self.headless)
             chrome_options = Options()
             
             if self.headless:
@@ -77,18 +83,13 @@ class GoogleMapsScraper:
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument("--disable-features=IsolateOrigins,site-per-process")
             chrome_options.add_argument("--disable-site-isolation-trials")
+
+            chrome_binary = resolve_chrome_binary()
+            if chrome_binary:
+                chrome_options.binary_location = chrome_binary
             
             try:
-                # Try to use webdriver-manager if available
-                try:
-                    from webdriver_manager.chrome import ChromeDriverManager
-                    self.driver = webdriver.Chrome(
-                        service=Service(ChromeDriverManager().install()),
-                        options=chrome_options
-                    )
-                except ImportError:
-                    # Fallback to system Chrome
-                    self.driver = webdriver.Chrome(options=chrome_options)
+                self.driver = create_chrome_driver(chrome_options)
                 
                 # Remove webdriver property to avoid detection
                 if self.use_stealth:
@@ -221,8 +222,11 @@ class GoogleMapsScraper:
             self._human_like_delay(2, 4)
             self._handle_consent(driver)
             if self._is_blocked_page(driver):
-                logger.warning("Google Maps returned a block/interstitial page. Stopping early.")
-                return results
+                raise ValueError(
+                    "Google Maps blocked automated browsing (unusual traffic / captcha). "
+                    "This scraper will stop to avoid looping. "
+                    "Recommended: use Google Places API (set GOOGLE_PLACES_API_KEY and send use_places_api=true)."
+                )
             
             # If direct search did not load, fallback to search box
             try:
@@ -415,8 +419,15 @@ class GoogleMapsScraper:
                         self._human_like_delay(2.2, 3.4)
                         self._handle_consent(driver)
                         if self._is_blocked_page(driver):
-                            logger.warning("Hit block/interstitial while opening a place page. Stopping early.")
-                            break
+                            if results:
+                                logger.warning(
+                                    "Hit block/interstitial while opening a place page. Returning partial results."
+                                )
+                                break
+                            raise ValueError(
+                                "Google Maps blocked automated browsing (unusual traffic / captcha). "
+                                "Recommended: use Google Places API (set GOOGLE_PLACES_API_KEY and send use_places_api=true)."
+                            )
                         business_data = self._extract_from_details_panel(driver)
                         if business_data and business_data.get("name"):
                             name = business_data.get("name")

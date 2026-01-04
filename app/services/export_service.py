@@ -1,6 +1,8 @@
 """Export leads to various formats"""
 import csv
 import io
+import json
+from pathlib import Path
 from typing import List
 from app.core.models import Lead
 
@@ -111,3 +113,36 @@ class ExportService:
             
         except ImportError:
             raise ImportError("openpyxl is required for Excel export. Install with: pip install openpyxl")
+
+
+def export_to_csv(leads: List[Lead], output_path: str) -> None:
+    """
+    Write leads to a CSV file on disk.
+    """
+    csv_text = ExportService.to_csv(leads)
+    Path(output_path).write_text(csv_text, encoding="utf-8")
+
+
+def export_to_json(leads: List[Lead], output_path: str) -> None:
+    """
+    Write leads to a JSON file on disk.
+    """
+    payload = []
+    for lead in leads:
+        payload.append(
+            {
+                "name": getattr(lead, "name", None),
+                "niche": getattr(lead, "niche", None),
+                "website": getattr(lead, "website", None),
+                "emails": getattr(lead, "emails", None),
+                "phones": getattr(lead, "phones", None),
+                "address": getattr(lead, "address", None),
+                "city": getattr(lead, "city", None),
+                "country": getattr(lead, "country", None),
+                "source": getattr(lead, "source", None),
+                "quality_score": getattr(lead, "quality_score", None),
+                "quality_label": getattr(lead, "quality_label", None),
+                "social_links": getattr(lead, "social_links", None),
+            }
+        )
+    Path(output_path).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

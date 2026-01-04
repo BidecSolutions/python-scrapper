@@ -68,6 +68,33 @@
       margin-top: 12px;
       display: block;
     }
+    .divider {
+      height: 1px;
+      background: #1f2937;
+      margin: 14px 0;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+    }
+    .button.secondary {
+      background: #334155;
+    }
+    .button.secondary:hover {
+      background: #475569;
+    }
+    .button.danger {
+      background: #ef4444;
+    }
+    .button.danger:hover {
+      background: #dc2626;
+    }
+    .hint {
+      font-size: 10px;
+      color: #64748b;
+      margin-top: 6px;
+      line-height: 1.3;
+    }
   </style>
 </head>
 <body>
@@ -95,6 +122,57 @@
   </label>
   
   <button id="saveBtn" class="button">Save Settings</button>
+
+  <div class="divider"></div>
+
+  <div id="mapsSection" style="display:none;">
+    <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px;">Google Maps Capture</div>
+    <div class="hint">
+      Open Google Maps, run a search, then scroll the results list. Click “Start”, scroll to load more, then export.
+    </div>
+
+    <label class="label">Niche (optional)</label>
+    <input type="text" id="mapsNiche" class="input" placeholder="e.g. orthopedic" value="">
+
+    <label class="label">Location (optional)</label>
+    <input type="text" id="mapsLocation" class="input" placeholder="e.g. Karachi, Pakistan" value="">
+
+    <div class="row" style="margin-top: 10px;">
+      <button id="mapsStartBtn" class="button" style="margin-top:0;">Start</button>
+      <button id="mapsStopBtn" class="button secondary" style="margin-top:0;">Stop</button>
+    </div>
+
+    <button id="mapsFetchDetailsBtn" class="button secondary" style="margin-top: 8px;">Fetch Details (address/phone/website)</button>
+    <div class="row" style="align-items:center; margin-top: 8px;">
+      <label class="label" style="margin-top:0; flex:1;">Speed</label>
+      <span id="mapsSpeedLabel" class="hint" style="margin-top:0;">2.5s</span>
+    </div>
+    <input id="mapsSpeed" type="range" min="1000" max="8000" step="500" value="2500" style="width:100%; margin-top: 6px;">
+    <div class="row" style="margin-top: 8px;">
+      <button id="mapsFetchDetailsStopBtn" class="button secondary" style="margin-top:0;">Stop Details</button>
+      <button id="mapsCopyJsonBtn" class="button secondary" style="margin-top:0;">Copy JSON</button>
+    </div>
+
+    <div id="mapsCount" class="status inactive" style="margin-top: 10px;">Collected: 0</div>
+    <div id="mapsLastError" class="hint"></div>
+    <button id="mapsDebugPanelBtn" class="button secondary" style="margin-top: 8px;">Debug Panel (copy)</button>
+
+    <div class="row">
+      <button id="mapsDownloadCsvBtn" class="button secondary" style="margin-top:0;">Download CSV</button>
+      <button id="mapsDownloadJsonBtn" class="button secondary" style="margin-top:0;">Download JSON</button>
+    </div>
+
+    <button id="mapsEnrichEmailsBtn" class="button secondary">Fetch Emails (from website)</button>
+    <div class="hint" style="margin-top: 4px;">
+      Uses your backend (`/api/google-maps/extract-contacts`) to crawl each business website and extract emails.
+    </div>
+
+    <button id="mapsImportBtn" class="button" style="margin-top: 8px;">Import to Backend</button>
+    <div id="mapsImportStatus" class="hint"></div>
+    <button id="mapsEnrichImportedBtn" class="button secondary" style="margin-top: 8px;">Enrich Imported Leads (backend)</button>
+
+    <button id="mapsClearBtn" class="button danger">Clear</button>
+  </div>
   
   <script src="popup.js"></script>
 </body>

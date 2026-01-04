@@ -5,10 +5,12 @@
   "description": "Find and verify email addresses from LinkedIn profiles",
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "downloads"
   ],
   "host_permissions": [
     "https://www.linkedin.com/*",
+    "https://www.google.com/maps/*",
     "http://localhost:8002/*"
   ],
   "content_scripts": [
@@ -16,6 +18,10 @@
       "matches": ["https://www.linkedin.com/*"],
       "js": ["content.js"],
       "css": ["content.css"]
+    },
+    {
+      "matches": ["https://www.google.com/maps/*"],
+      "js": ["maps_content.js"]
     }
   ],
   "background": {

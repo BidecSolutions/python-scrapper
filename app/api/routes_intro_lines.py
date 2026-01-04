@@ -11,7 +11,8 @@ from app.core.orm_lists import LeadListORM
 from app.api.routes_settings import get_or_create_default_org
 from app.services.intro_line_generator import (
     generate_intro_line_for_lead,
-    generate_intro_lines_for_list
+    generate_intro_lines_for_list,
+    llm_enabled,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,9 @@ def generate_lead_intro_line(
     db: Session = Depends(get_db),
 ):
     """Generate an intro line for a specific lead"""
+    if not llm_enabled():
+        raise HTTPException(status_code=501, detail="Intro line generation disabled (ENABLE_LLM=1 to enable).")
+
     org = get_or_create_default_org(db)
     
     lead = db.query(LeadORM).filter(
@@ -73,6 +77,9 @@ def generate_list_intro_lines(
     db: Session = Depends(get_db),
 ):
     """Generate intro lines for all leads in a list"""
+    if not llm_enabled():
+        raise HTTPException(status_code=501, detail="Intro line generation disabled (ENABLE_LLM=1 to enable).")
+
     org = get_or_create_default_org(db)
     
     # Verify list exists

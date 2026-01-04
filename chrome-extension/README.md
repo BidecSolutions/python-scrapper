@@ -2,6 +2,19 @@
 
 Chrome extension for finding and verifying email addresses from LinkedIn profiles.
 
+## Google Maps Capture (New)
+
+This extension can also capture Google Maps search results **as you scroll** (user-driven).
+
+1. Open `https://www.google.com/maps`
+2. Search for your niche + location
+3. Open the extension popup → **Google Maps Capture**
+4. Click **Start**
+5. Scroll the results list to load more items
+6. Click **Download CSV** or **Download JSON**
+
+To import the JSON into the backend database, use `POST /api/google-maps/import`.
+
 ## Installation
 
 1. Open Chrome and navigate to `chrome://extensions/`
@@ -51,6 +64,7 @@ The extension requires the LeadFlux API to be running with these endpoints:
 
 - `POST /api/email-finder` - Find email from name + domain
 - `POST /api/email-finder/save-to-leads` - Save email to leads
+- `POST /api/google-maps/import` - Import captured Maps results (optional)
 
 ## Notes
 

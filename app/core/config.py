@@ -47,11 +47,15 @@ class Settings:
     GROQ_API_KEY: Optional[str] = os.getenv("GROQ_API_KEY")
     GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")  # Default to current model
     
-    # Debug: Log which keys are found (without exposing values)
-    if not GROQ_API_KEY and not OPENAI_API_KEY and not ANTHROPIC_API_KEY:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.warning("No LLM API keys found in environment. Set GROQ_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY in .env file")
+    # Only warn about missing LLM keys if LLM features are explicitly enabled.
+    if os.getenv("ENABLE_LLM", "").strip().lower() in {"1", "true", "yes", "y", "on"}:
+        if not GROQ_API_KEY and not OPENAI_API_KEY and not ANTHROPIC_API_KEY:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "LLM features enabled (ENABLE_LLM=1) but no API keys found. "
+                "Set GROQ_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY."
+            )
     
     # Geocoding API Keys
     OPENCAGE_API_KEY: Optional[str] = os.getenv("OPENCAGE_API_KEY")
